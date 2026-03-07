@@ -1,0 +1,525 @@
+# figma-cli-Claude-Codex
+
+<p align="center">
+  <a href="https://intodesignsystems.com"><img src="https://img.shields.io/badge/Into_Design_Systems-intodesignsystems.com-ff6b35" alt="Into Design Systems"></a>
+  <img src="https://img.shields.io/badge/Figma-Desktop-purple" alt="Figma Desktop">
+  <img src="https://img.shields.io/badge/No_API_Key-Required-green" alt="No API Key">
+  <img src="https://img.shields.io/badge/Claude_Code_%2B_Codex-Ready-blue" alt="Claude Code and Codex">
+</p>
+
+<p align="center">
+  <b>Control Figma Desktop with Claude Code or Codex.</b><br>
+  Full read/write access. No API key required.<br>
+  Just talk to your coding agent about your designs.
+</p>
+
+```
+  ███████╗██╗ ██████╗ ███╗   ███╗ █████╗       ██████╗ ███████╗       ██████╗██╗     ██╗
+  ██╔════╝██║██╔════╝ ████╗ ████║██╔══██╗      ██╔══██╗██╔════╝      ██╔════╝██║     ██║
+  █████╗  ██║██║  ███╗██╔████╔██║███████║█████╗██║  ██║███████╗█████╗██║     ██║     ██║
+  ██╔══╝  ██║██║   ██║██║╚██╔╝██║██╔══██║╚════╝██║  ██║╚════██║╚════╝██║     ██║     ██║
+  ██║     ██║╚██████╔╝██║ ╚═╝ ██║██║  ██║      ██████╔╝███████║      ╚██████╗███████╗██║
+  ╚═╝     ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝      ╚═════╝ ╚══════╝       ╚═════╝╚══════╝╚═╝
+```
+
+## What is This?
+
+A CLI that connects directly to Figma Desktop and gives you complete control:
+
+- **Design Tokens** — Create variables, collections, modes (Light/Dark), bind to nodes
+- **Create Anything** — Frames, text, shapes, icons (150k+ from Iconify), components
+- **Slots** — Create and manage Figma's new Slots feature for flexible component content
+- **Team Libraries** — Import and use components, styles, variables from any library
+- **Analyze Designs** — Colors, typography, spacing, find repeated patterns
+- **Lint & Accessibility** — Contrast checker, touch targets, design rules
+- **Export** — PNG, SVG, JSX, Storybook stories, CSS variables, Tailwind config
+- **Batch Operations** — Rename layers, find/replace text, create 100 variables at once
+- **Works with Claude Code and Codex** — `fig-start` launches either agent with the right repo context preloaded
+
+This repository is a Claude Code + Codex oriented variant of the original workflow.
+The CLI commands stay the same: `fig-start`, `figma-cli`, and `figma-ds-cli`.
+
+## Why This CLI?
+
+This project includes an `AGENTS.md` file that Codex reads automatically and that also documents the expected workflow for Claude Code. It contains:
+
+- All available commands and their syntax
+- Best practices (e.g., "use `render` for text-heavy designs")
+- Common requests mapped to solutions
+
+**Want to teach the agents new tricks?** Just update `AGENTS.md`. No code changes needed.
+
+**Example:** You type "Create Tailwind colors" → the agent already knows to run `node src/index.js tokens tailwind` because it's documented in `AGENTS.md`.
+
+---
+
+## What You Need
+
+- **Node.js 18+** — `brew install node` (or [download](https://nodejs.org/))
+- **Figma Desktop** (free account works)
+- **Claude Code or Codex**
+- **macOS or Windows** (macOS recommended, Windows supported)
+- **macOS Full Disk Access** for Terminal (Yolo Mode only — not needed for [Safe Mode](#-safe-mode--for-restricted-environments))
+
+This project does **not** need a Figma REST API key or `FIGMA_PERSONAL_TOKEN`.
+It talks to Figma Desktop directly via CDP or the local plugin bridge.
+
+---
+
+## Setup
+
+```bash
+git clone git@github.com:roger6vi/figma-cli-Claude-Codex.git
+cd figma-cli-Claude-Codex
+npm install
+npm run setup-alias
+source ~/.zshrc
+```
+
+That's it. Now open a **new terminal** and type:
+
+```bash
+fig-start
+```
+
+This will:
+1. Start Figma (if not running)
+2. Connect to Figma (Yolo Mode: patches Figma once for direct access)
+3. Show your open Figma files: pick one with arrow keys
+4. Ask whether to launch Claude Code or Codex
+5. Launch the selected agent with the repo context pre-loaded
+
+**Done.** Talk to Claude Code or Codex about your Figma file.
+
+> **Note:** `fig-start` works from any directory. The setup script saves the repo location to `~/.figma-cli/config.json`.
+
+### fig-start Options
+
+`fig-start` now includes an agent picker, so the same launcher works for both Claude Code and Codex.
+
+| Command | Description |
+|---------|-------------|
+| `fig-start` | Yolo Mode (default), interactive file picker |
+| `fig-start --safe` | Safe Mode (plugin-based, no patching) |
+| `fig-start --setup` | Change the figma-cli repo path |
+
+### Safe Mode (no patching)
+
+If you can't grant Full Disk Access or prefer not to patch Figma:
+
+```bash
+fig-start --safe
+```
+
+This uses a Figma plugin instead of patching. See [Safe Mode](#-safe-mode--for-restricted-environments) for details.
+
+### Manual Setup (without fig-start)
+
+```bash
+cd figma-cli-Claude-Codex
+claude
+```
+
+Or:
+
+```bash
+cd figma-cli-Claude-Codex
+codex -C .
+```
+
+Then tell the agent: `Connect to Figma`
+
+---
+
+## Using It
+
+Once connected, just talk to Claude Code or Codex:
+
+> "Add shadcn colors to my project"
+
+> "Add a card component"
+
+> "Check accessibility"
+
+> "Export variables as CSS"
+
+The included `AGENTS.md` teaches the agent all commands automatically. No manual required.
+
+**Safe Mode users:** Start the FigCli plugin each time you open Figma.
+
+## Two Connection Modes
+
+### 🚀 Yolo Mode (Recommended)
+
+**What it does:** Patches Figma once to enable a debug port, then connects directly.
+
+**Pros:**
+- Fully automatic (no manual steps after setup)
+- Slightly faster execution
+- Secure: localhost-only CDP, daemon token auth, auto-shutdown on idle
+
+**Cons:**
+- Requires one-time Figma patch
+- Needs Full Disk Access on macOS (one-time)
+
+```
+┌─────────────┐      WebSocket (CDP)      ┌─────────────┐
+│     CLI     │ ◄───────────────────────► │   Figma     │
+└─────────────┘      localhost:9222       └─────────────┘
+```
+
+```bash
+node src/index.js connect
+```
+
+---
+
+### 🔒 Safe Mode — For Restricted Environments
+
+**What it does:** Uses a Figma plugin to communicate. No Figma modification needed.
+
+**Pros:**
+- No patching, no app modification
+- Works everywhere (corporate, personal, any environment)
+- No Full Disk Access needed
+- **Full feature parity** with Yolo Mode (all commands work)
+
+**Cons:**
+- Start plugin manually each session (2 clicks)
+- Slightly slower than Yolo Mode
+
+```
+┌─────────────┐     WebSocket     ┌─────────────┐     Plugin API     ┌─────────────┐
+│     CLI     │ ◄───────────────► │   Daemon    │ ◄────────────────► │   Plugin    │
+└─────────────┘   localhost:3456  └─────────────┘                    └─────────────┘
+```
+
+**Step 1:** Start Safe Mode
+```bash
+fig-start --safe
+```
+Or manually: `node src/index.js connect --safe`
+
+**Step 2:** Import plugin (one-time only)
+1. In Figma: **Plugins → Development → Import plugin from manifest**
+2. Select `plugin/manifest.json` from this project
+3. Click **Open**
+
+**Step 3:** Start the plugin (each session)
+1. In Figma: **Plugins → Development → FigCli**
+2. Terminal shows: `Plugin connected!`
+
+**Tip:** Right-click the plugin → **Add to toolbar** for quick access.
+
+---
+
+### Which Mode Should I Use?
+
+| Situation | Command |
+|---|---|
+| First time user | `fig-start` (Yolo Mode) |
+| Personal Mac | `fig-start` (Yolo Mode) |
+| Corporate laptop | `fig-start --safe` |
+| Permission errors with Yolo | `fig-start --safe` |
+| Can't modify apps | `fig-start --safe` |
+
+Both modes have **full feature parity**. Safe Mode uses native Figma Plugin API implementations instead of figma-use, so all commands work identically.
+
+---
+
+## Troubleshooting
+
+### Permission Error When Patching (macOS)
+
+If you see `EPERM: operation not permitted, open '.../app.asar'`:
+
+**1. Grant Full Disk Access to Terminal**
+
+macOS blocks file access without this permission, even with sudo.
+
+1. Open **System Settings** → **Privacy & Security** → **Full Disk Access**
+2. Click the **+** button
+3. Add **Terminal** (or iTerm, VS Code, Warp, etc.)
+4. **Restart Terminal completely** (quit and reopen)
+
+**2. Make sure Figma is completely closed**
+```bash
+# Check if Figma is still running
+ps aux | grep -i figma
+
+# Force quit if needed
+killall Figma
+```
+
+**3. Run connect again**
+```bash
+node src/index.js connect
+```
+
+If still failing, try with sudo: `sudo node src/index.js connect`
+
+**4. Manual patch (last resort)**
+
+If nothing works, you can patch manually:
+
+```bash
+# Backup original
+sudo cp /Applications/Figma.app/Contents/Resources/app.asar ~/app.asar.backup
+
+# The patch changes one string in the file
+# From: removeSwitch("remote-debugging-port")
+# To:   removeSwitch("remote-debugXing-port")
+
+# Use a hex editor or this command:
+sudo sed -i '' 's/remote-debugging-port/remote-debugXing-port/g' /Applications/Figma.app/Contents/Resources/app.asar
+
+# Re-sign the app
+sudo codesign --force --deep --sign - /Applications/Figma.app
+```
+
+### Windows
+
+Windows is supported but less tested than macOS.
+
+**Permission Error:** Run Command Prompt or PowerShell as Administrator, then run `node src/index.js connect`.
+
+**Figma Location:** The CLI expects Figma at `%LOCALAPPDATA%\Figma\Figma.exe` (default install location).
+
+**Safe Mode:** If Yolo Mode doesn't work, use Safe Mode: `node src/index.js connect --safe`
+
+### Figma Not Connecting
+
+1. Make sure Figma Desktop is running (not the web version)
+2. Open a design file in Figma (not just the home screen)
+3. Restart connection: `node src/index.js connect`
+
+---
+
+## Updating
+
+```bash
+cd ~/path/to/figma-cli
+git pull
+npm install
+```
+
+## How It Works
+
+Connects to Figma Desktop via Chrome DevTools Protocol (CDP). No API key needed because it uses your existing Figma session.
+
+There are two local connection paths:
+- **Yolo Mode**: direct CDP connection on `localhost:9222`
+- **Safe Mode**: local daemon on `localhost:3456` plus the FigCli plugin bridge
+
+Neither mode uses the Figma REST API or requires `FIGMA_PERSONAL_TOKEN`.
+
+```
+┌─────────────┐      WebSocket (CDP)      ┌─────────────┐
+│ figma-ds-cli │ ◄───────────────────────► │   Figma     │
+│    (CLI)    │      localhost:9222       │  Desktop    │
+└─────────────┘                            └─────────────┘
+```
+
+### Security
+
+The CLI runs a local daemon for faster command execution. Security features:
+
+- **Session token authentication**: Random 32-byte token required for all requests
+- **No CORS headers**: Blocks cross-origin browser requests
+- **Host header validation**: Only accepts localhost/127.0.0.1
+- **Idle timeout**: Auto-shutdown after 10 minutes of inactivity (configurable)
+- **Fixed local ports**: CDP uses `9222`; Safe Mode daemon uses `3456`
+
+The daemon session token is stored in the OS temp directory with owner-only permissions (0600).
+On macOS/Linux this is typically `/tmp/.figma-daemon-token`.
+
+---
+
+## Full Feature List
+
+### Design Tokens & Variables
+
+- **Color presets** — shadcn (276 vars with Light/Dark mode), Radix UI (156 vars)
+- Create Tailwind CSS color palettes (all 22 color families, 50-950 shades)
+- Create and manage variable collections
+- **Variable modes** (Light/Dark/Mobile) with per-mode values
+- **Batch create** up to 100 variables at once
+- **Batch update** variable values across modes
+- Bind variables to node properties (fill, stroke, gap, padding, radius)
+- Export variables as CSS custom properties
+- Export variables as Tailwind config
+
+### Create Elements
+
+- Frames with auto-layout
+- Rectangles, circles, ellipses
+- Text with custom fonts, sizes, weights
+- Lines
+- Icons (150,000+ from Iconify: Lucide, Material Design, Heroicons, etc.)
+- Groups
+- Components from frames
+- Component instances
+- **Component sets with variants**
+
+### Modify Elements
+
+- Change fill and stroke colors
+- Set corner radius
+- Resize and move
+- Apply auto-layout (row/column, gap, padding)
+- Set sizing mode (hug/fill/fixed)
+- Rename nodes
+- Duplicate nodes
+- Delete nodes
+- **Flip nodes** (horizontal/vertical)
+- **Scale vectors**
+
+### Find & Select
+
+- Find nodes by name
+- Find nodes by type (FRAME, COMPONENT, TEXT, etc.)
+- **XPath-like queries** (`//FRAME[@width > 300]`)
+- Select nodes by ID
+- Get node properties
+- Get node tree structure
+
+### Canvas Operations
+
+- List all nodes on canvas
+- Arrange frames in grid or column
+- Delete all nodes
+- Zoom to fit content
+- Smart positioning (auto-place without overlaps)
+
+### Export
+
+- **Export node by ID** (`export node "1:234" -s 2 -f png`)
+- Export nodes as PNG (with scale factor)
+- Export nodes as SVG
+- **Export multiple sizes** (@1x, @2x, @3x)
+- Take screenshots
+- **Export to JSX** (React code)
+- **Export to Storybook** stories
+- Export variables as CSS
+- Export variables as Tailwind config
+
+### FigJam Support
+
+- Create sticky notes
+- Create shapes with text
+- Connect elements with arrows
+- List FigJam elements
+- Run JavaScript in FigJam context
+
+### Team Libraries
+
+- List available library variable collections
+- Import variables from libraries
+- Import components from libraries
+- Create instances of library components
+- Import and apply library styles (color, text, effect)
+- Bind library variables to node properties
+- Swap component instances to different library components
+- List all enabled libraries
+
+### Designer Utilities
+
+- **Batch rename layers** (with patterns: {n}, {name}, {type})
+- **Case conversion** (camelCase, PascalCase, snake_case, kebab-case)
+- **Lorem ipsum generator** (words, sentences, paragraphs)
+- **Fill text with placeholder content**
+- **Insert images from URL**
+- **Unsplash integration** (random stock photos by keyword)
+- **Contrast checker** (WCAG AA/AAA compliance)
+- **Check text contrast** against background
+- **Find and replace text** across all layers
+- **Select same** (fill, stroke, font, size)
+- **Color blindness simulation** (deuteranopia, protanopia, tritanopia)
+
+### Query & Analysis
+
+- **Analyze colors** — usage frequency, variable bindings
+- **Analyze typography** — all font combinations used
+- **Analyze spacing** — gap/padding values, grid compliance
+- **Find clusters** — detect repeated patterns (potential components)
+- **Visual diff** — compare two nodes
+- **Create diff patch** — structural patches between versions
+
+### Lint & Accessibility
+
+- **Design linting** with 8+ rules:
+  - `no-default-names` — detect unnamed layers
+  - `no-deeply-nested` — flag excessive nesting
+  - `no-empty-frames` — find empty frames
+  - `prefer-auto-layout` — suggest auto-layout
+  - `no-hardcoded-colors` — check variable usage
+  - `color-contrast` — WCAG AA/AAA compliance
+  - `touch-target-size` — minimum 44x44 check
+  - `min-text-size` — minimum 12px text
+- **Accessibility snapshot** — extract interactive elements tree
+
+### Component Variants
+
+- Create component sets with variants
+- Add variant properties
+- Combine frames into component sets
+- **Organize variants** into grid with labels
+- **Auto-generate component sets** from similar frames
+
+### Component Documentation
+
+- **Add descriptions** to components (supports markdown)
+- **Document with template** (usage, props, notes)
+- Read component descriptions
+
+### CSS Grid Layout
+
+- Set up grid layout with columns and rows
+- Configure column/row gaps
+- Auto-reorganize children into grid
+
+### Console & Debugging
+
+- **List open Figma files** (`files` command, used by fig-start)
+- **Capture console logs** from Figma
+- **Execute code with log capture**
+- **Reload page**
+- **Navigate to files**
+
+### Advanced
+
+- Execute any Figma Plugin API code directly
+- Render complex UI from JSX-like syntax
+- Full programmatic control over Figma
+- Match vectors to Iconify icons
+
+### Not Supported (requires REST API)
+
+- Comments (read/write/delete) — requires Figma API key
+- Version history
+- Team/project management
+
+---
+
+## Author
+
+**[Sil Bormüller](https://www.linkedin.com/in/silbormueller/)** — [intodesignsystems.com](https://intodesignsystems.com)
+
+## Powered By
+
+This CLI is built on top of **[figma-use](https://github.com/dannote/figma-use)** by [dannote](https://github.com/dannote) — an excellent Figma CLI with JSX rendering, XPath queries, design linting, and much more.
+
+In **Yolo Mode**, we use figma-use for:
+- JSX rendering (`render` command)
+- Node operations (`node tree`, `node to-component`, etc.)
+- Design analysis (`analyze colors`, `analyze typography`)
+- Design linting (`lint`)
+- And many other features
+
+In **Safe Mode**, all commands use native Figma Plugin API implementations, so figma-use is not required.
+
+**Big thanks to dannote for figma-use!**
+
+## License
+
+MIT
