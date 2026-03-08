@@ -131,9 +131,11 @@ node src/index.js align center                 # Align items
 ```bash
 node src/index.js find "Button"                # Find by name
 node src/index.js find "Card" -t FRAME         # Filter by type
+node src/index.js find "DPAG" --exact --coords # Exact match with coordinates
 node src/index.js select "1:234"               # Select node
-node src/index.js get                          # Get selection props
-node src/index.js get "1:234"                  # Get specific node
+node src/index.js get                          # Get structured snapshot for selection
+node src/index.js get "1:234" -d 1             # Include child nodes up to depth 1
+node src/index.js get --shared a11y            # Include shared plugin data namespace
 ```
 
 ## Canvas Operations
@@ -159,6 +161,10 @@ node src/index.js delete "1:234"               # Delete by ID
 ```bash
 node src/index.js node tree                    # Show tree structure
 node src/index.js node tree "1:234" -d 5       # Deeper depth
+node src/index.js node tree --coords           # Include absolute and local coordinates
+node src/index.js node tree --json             # Raw structured tree snapshot
+node src/index.js node inspect                 # Inspect selection or current page
+node src/index.js node inspect "1:234" --shared a11y
 node src/index.js node bindings                # Show variable bindings
 node src/index.js node to-component "1:234"    # Convert to component
 node src/index.js node delete "1:234"          # Delete by ID
@@ -425,7 +431,8 @@ All commands work in both modes. In Safe Mode, commands use native Figma API ins
 | `render-batch` | figma-use | daemon (native API) |
 | `node to-component` | figma-use | native API |
 | `node delete` | figma-use | native API |
-| `node tree` | figma-use | native API |
+| `node tree` | native API | native API |
+| `node inspect` | native API | native API |
 | `node bindings` | figma-use | native API |
 | `lint` | figma-use | native API |
 | `analyze colors/typography/spacing/clusters` | figma-use | native API |

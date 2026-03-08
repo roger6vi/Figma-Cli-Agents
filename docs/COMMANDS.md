@@ -147,6 +147,22 @@ figma-ds-cli export css
 figma-ds-cli export tailwind
 ```
 
+## Node Inspection
+
+```bash
+# Structured snapshot for current selection
+figma-ds-cli get
+
+# Find with exact match and absolute coordinates
+figma-ds-cli find "DPAG" --exact --coords
+
+# Tree view with IDs and coordinates
+figma-ds-cli node tree --coords
+
+# Raw structured node snapshot
+figma-ds-cli node inspect "1:234" --shared a11y
+```
+
 ## Raw Commands
 
 ```bash
