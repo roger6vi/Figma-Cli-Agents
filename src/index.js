@@ -4524,22 +4524,50 @@ program
   .description('Find nodes by name (partial match)')
   .option('-t, --type <type>', 'Filter by type (FRAME, TEXT, RECTANGLE, etc.)')
   .option('-l, --limit <n>', 'Limit results', '20')
+  .option('-x, --exact', 'Match exact name instead of partial match')
+  .option('-c, --coords', 'Include absolute coordinates and size')
   .action(async (name, options) => {
     await checkConnection();
+    const query = JSON.stringify(name.toLowerCase());
+    const matchExpr = options.exact
+      ? `candidate === ${query}`
+      : `candidate.includes(${query})`;
     let code = `(function() {
-const results = [];
-function search(node) {
-  if (node.name && node.name.toLowerCase().includes('${name.toLowerCase()}')) {
-    ${options.type ? `if (node.type === '${options.type.toUpperCase()}')` : ''}
-    results.push({ id: node.id, name: node.name, type: node.type });
-  }
-  if (node.children && results.length < ${options.limit}) {
-    node.children.forEach(search);
-  }
-}
-search(figma.currentPage);
-return results.length === 0 ? 'No nodes found matching "${name}"' : results.slice(0, ${options.limit}).map(r => r.id + ' [' + r.type + '] ' + r.name).join('\\n');
-})()`;
+	const results = [];
+	function getAbsolutePosition(node) {
+	  if (!('absoluteTransform' in node) || !Array.isArray(node.absoluteTransform)) return null;
+	  const t = node.absoluteTransform;
+	  if (!Array.isArray(t[0]) || !Array.isArray(t[1])) return null;
+	  return { x: Math.round(t[0][2]), y: Math.round(t[1][2]) };
+	}
+	function search(node) {
+	  const candidate = (node.name || '').toLowerCase();
+	  if (node.name && ${matchExpr}) {
+	    ${options.type ? `if (node.type === '${options.type.toUpperCase()}')` : ''}
+	    {
+	      const abs = getAbsolutePosition(node);
+	      results.push({
+	        id: node.id,
+	        name: node.name,
+	        type: node.type,
+	        x: abs ? abs.x : null,
+	        y: abs ? abs.y : null,
+	        width: typeof node.width === 'number' ? Math.round(node.width) : null,
+	        height: typeof node.height === 'number' ? Math.round(node.height) : null
+	      });
+	    }
+	  }
+	  if (node.children && results.length < ${options.limit}) {
+	    node.children.forEach(search);
+	  }
+	}
+	search(figma.currentPage);
+	return results.length === 0 ? 'No nodes found matching "${name}"' : results.slice(0, ${options.limit}).map(r => {
+	  let line = r.id + ' [' + r.type + '] ' + r.name;
+	  ${options.coords ? `if (r.x !== null && r.y !== null) line += ' @(' + r.x + ',' + r.y + ')'; if (r.width !== null && r.height !== null) line += ' ' + r.width + 'x' + r.height;` : ''}
+	  return line;
+	}).join('\\n');
+	})()`;
     await runEvalCommand(code, { silent: false });
   });
 
@@ -5512,48 +5540,60 @@ analyze
 
 const node = program
   .command('node')
-  .description('Node operations (tree, bindings, to-component)');
+  .description('Node operations (tree, inspect, bindings, to-component)');
 
 node
   .command('tree [nodeId]')
   .description('Show node tree structure')
   .option('-d, --depth <n>', 'Max depth', '3')
+  .option('-c, --coords', 'Include absolute and local coordinates')
+  .option('--json', 'Output structured JSON instead of text tree')
+  .option('--shared <namespace>', 'Include shared plugin data for namespace')
+  .action(async (nodeId, options) => {
+    await checkConnection();
+    try {
+      const result = await inspectNodeSnapshot({
+        nodeId,
+        depth: options.depth,
+        sharedNamespace: options.shared,
+        fallbackToPage: true
+      });
+      if (result?.error) {
+        console.log(chalk.red('✗ ' + result.error));
+        return;
+      }
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      console.log(formatNodeTree(result, { showCoords: options.coords }));
+    } catch (e) {
+      console.log(chalk.red('✗ Tree failed: ' + e.message));
+    }
+  });
+
+node
+  .command('inspect [nodeId]')
+  .description('Inspect node with structured snapshot')
+  .option('-d, --depth <n>', 'Include child nodes up to depth', '2')
+  .option('--shared <namespace>', 'Include shared plugin data for namespace')
   .action(async (nodeId, options) => {
     await checkConnection();
 
-    if (await isInSafeMode()) {
-      const maxDepth = parseInt(options.depth) || 3;
-      const code = `(async () => {
-        const maxDepth = ${maxDepth};
-        const targetId = ${nodeId ? `"${nodeId}"` : 'null'};
-        const root = targetId ? await figma.getNodeByIdAsync(targetId) : figma.currentPage;
-        if (!root) return 'Node not found';
-
-        const lines = [];
-        function printNode(node, indent = 0, depth = 0) {
-          if (depth > maxDepth) return;
-          const prefix = '  '.repeat(indent);
-          const size = node.width && node.height ? \` (\${Math.round(node.width)}x\${Math.round(node.height)})\` : '';
-          lines.push(prefix + node.type + ': ' + node.name + size);
-          if ('children' in node && depth < maxDepth) {
-            node.children.forEach(c => printNode(c, indent + 1, depth + 1));
-          }
-        }
-        printNode(root);
-        return lines.join('\\n');
-      })()`;
-
-      try {
-        const result = await fastEval(code);
-        console.log(result);
-      } catch (e) {
-        console.log(chalk.red('✗ Tree failed: ' + e.message));
+    try {
+      const result = await inspectNodeSnapshot({
+        nodeId,
+        depth: options.depth,
+        sharedNamespace: options.shared,
+        fallbackToPage: true
+      });
+      if (result?.error) {
+        console.log(chalk.red('✗ ' + result.error));
+        return;
       }
-    } else {
-      let cmd = 'npx figma-use node tree';
-      if (nodeId) cmd += ` "${nodeId}"`;
-      cmd += ` --depth ${options.depth}`;
-      runFigmaUse(cmd);
+      console.log(JSON.stringify(result, null, 2));
+    } catch (e) {
+      console.log(chalk.red('✗ Inspect failed: ' + e.message));
     }
   });
 
