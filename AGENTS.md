@@ -4,8 +4,8 @@ CLI that controls Figma Desktop directly. No API key needed.
 
 ## Critical Runtime Context
 
-- This repo controls **live Figma Desktop** through `node src/index.js`. It is **not** a `.pen` / Pencil project.
-- Do **not** use Pencil MCP tools, `.pen` editor workflows, or ask the user to open a `.pen` file for normal figma-cli tasks.
+- This repo controls **live Figma Desktop** through `node src/index.js`.
+- Use the figma-cli commands from this repo for normal tasks in this session.
 - If the session was started with `fig-start --safe`, assume **Safe Mode is already active** and the **FigCli plugin is already connected**, unless a real command proves otherwise.
 - In Safe Mode, still use the normal `node src/index.js ...` commands from this repo. They route through the daemon/plugin automatically.
 - Only ask the user to reopen/import/start the plugin if a figma-cli command actually fails with a plugin/connection error.

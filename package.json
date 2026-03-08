@@ -1,7 +1,7 @@
 {
   "name": "figma-ds-cli",
-  "version": "1.1.1",
-  "description": "CLI for controlling Figma Desktop from Claude Code and Codex. No API key required.",
+  "version": "1.2.0",
+  "description": "CLI for controlling Figma Desktop from Claude Code, Codex, and Gemini. No API key required.",
   "author": "Sil Bormüller",
   "license": "MIT",
   "type": "module",
@@ -11,6 +11,8 @@
     "fig-start": "bin/fig-start"
   },
   "files": [
+    "AGENTS.md",
+    "GEMINI.md",
     "src",
     "bin",
     "plugin"
@@ -24,11 +26,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/roger6vi/figma-cli-Claude-Codex.git"
+    "url": "git+https://github.com/roger6vi/Figma-Cli-Agents.git"
   },
-  "homepage": "https://github.com/roger6vi/figma-cli-Claude-Codex#readme",
+  "homepage": "https://github.com/roger6vi/Figma-Cli-Agents#readme",
   "bugs": {
-    "url": "https://github.com/roger6vi/figma-cli-Claude-Codex/issues"
+    "url": "https://github.com/roger6vi/Figma-Cli-Agents/issues"
   },
   "scripts": {
     "setup-alias": "bash bin/setup-alias.sh",

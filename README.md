@@ -1,14 +1,14 @@
-# figma-cli-Claude-Codex
+# Figma-Cli-Agents
 
 <p align="center">
   <a href="https://intodesignsystems.com"><img src="https://img.shields.io/badge/Into_Design_Systems-intodesignsystems.com-ff6b35" alt="Into Design Systems"></a>
   <img src="https://img.shields.io/badge/Figma-Desktop-purple" alt="Figma Desktop">
   <img src="https://img.shields.io/badge/No_API_Key-Required-green" alt="No API Key">
-  <img src="https://img.shields.io/badge/Claude_Code_%2B_Codex-Ready-blue" alt="Claude Code and Codex">
+  <img src="https://img.shields.io/badge/Claude_Code_%2B_Codex_%2B_Gemini-Ready-blue" alt="Claude Code, Codex, and Gemini">
 </p>
 
 <p align="center">
-  <b>Control Figma Desktop with Claude Code or Codex.</b><br>
+  <b>Control Figma Desktop with Claude Code, Codex, or Gemini.</b><br>
   Full read/write access. No API key required.<br>
   Just talk to your coding agent about your designs.
 </p>
@@ -34,14 +34,14 @@ A CLI that connects directly to Figma Desktop and gives you complete control:
 - **Lint & Accessibility** — Contrast checker, touch targets, design rules
 - **Export** — PNG, SVG, JSX, Storybook stories, CSS variables, Tailwind config
 - **Batch Operations** — Rename layers, find/replace text, create 100 variables at once
-- **Works with Claude Code and Codex** — `fig-start` launches either agent with the right repo context preloaded
+- **Works with Claude Code, Codex, and Gemini** — `fig-start` launches the selected agent with the right repo context preloaded
 
-This repository is a Claude Code + Codex oriented variant of the original workflow.
+This repository is an agent-friendly variant of the original workflow with launch support for Claude Code, Codex, and Gemini.
 The CLI commands stay the same: `fig-start`, `figma-cli`, and `figma-ds-cli`.
 
 ## Why This CLI?
 
-This project includes an `AGENTS.md` file that Codex reads automatically and that also documents the expected workflow for Claude Code. It contains:
+This project includes an `AGENTS.md` file plus a `GEMINI.md` import so the supported agents share the same workflow context. It contains:
 
 - All available commands and their syntax
 - Best practices (e.g., "use `render` for text-heavy designs")
@@ -57,7 +57,7 @@ This project includes an `AGENTS.md` file that Codex reads automatically and tha
 
 - **Node.js 18+** — `brew install node` (or [download](https://nodejs.org/))
 - **Figma Desktop** (free account works)
-- **Claude Code or Codex**
+- **Claude Code, Codex, or Gemini**
 - **macOS or Windows** (macOS recommended, Windows supported)
 - **macOS Full Disk Access** for Terminal (Yolo Mode only — not needed for [Safe Mode](#-safe-mode--for-restricted-environments))
 
@@ -69,8 +69,8 @@ It talks to Figma Desktop directly via CDP or the local plugin bridge.
 ## Setup
 
 ```bash
-git clone git@github.com:roger6vi/figma-cli-Claude-Codex.git
-cd figma-cli-Claude-Codex
+git clone git@github.com:roger6vi/Figma-Cli-Agents.git
+cd Figma-Cli-Agents
 npm install
 npm run setup-alias
 source ~/.zshrc
@@ -86,16 +86,16 @@ This will:
 1. Start Figma (if not running)
 2. Connect to Figma (Yolo Mode: patches Figma once for direct access)
 3. Show your open Figma files: pick one with arrow keys
-4. Ask whether to launch Claude Code or Codex
+4. Ask whether to launch Claude Code, Codex, or Gemini
 5. Launch the selected agent with the repo context pre-loaded
 
-**Done.** Talk to Claude Code or Codex about your Figma file.
+**Done.** Talk to Claude Code, Codex, or Gemini about your Figma file.
 
 > **Note:** `fig-start` works from any directory. The setup script saves the repo location to `~/.figma-cli/config.json`.
 
 ### fig-start Options
 
-`fig-start` now includes an agent picker, so the same launcher works for both Claude Code and Codex.
+`fig-start` now includes an agent picker, so the same launcher works for Claude Code, Codex, and Gemini.
 
 | Command | Description |
 |---------|-------------|
@@ -116,15 +116,22 @@ This uses a Figma plugin instead of patching. See [Safe Mode](#-safe-mode--for-r
 ### Manual Setup (without fig-start)
 
 ```bash
-cd figma-cli-Claude-Codex
+cd Figma-Cli-Agents
 claude
 ```
 
 Or:
 
 ```bash
-cd figma-cli-Claude-Codex
+cd Figma-Cli-Agents
 codex -C .
+```
+
+Or:
+
+```bash
+cd Figma-Cli-Agents
+gemini
 ```
 
 Then tell the agent: `Connect to Figma`
@@ -133,7 +140,7 @@ Then tell the agent: `Connect to Figma`
 
 ## Using It
 
-Once connected, just talk to Claude Code or Codex:
+Once connected, just talk to Claude Code, Codex, or Gemini:
 
 > "Add shadcn colors to my project"
 
@@ -143,7 +150,7 @@ Once connected, just talk to Claude Code or Codex:
 
 > "Export variables as CSS"
 
-The included `AGENTS.md` teaches the agent all commands automatically. No manual required.
+The included `AGENTS.md` and `GEMINI.md` give the supported agents the command reference automatically. No manual required.
 
 **Safe Mode users:** Start the FigCli plugin each time you open Figma.
 

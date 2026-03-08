@@ -15,6 +15,7 @@ import { createServer } from 'http';
 import { FigJamClient } from './figjam-client.js';
 import { FigmaClient } from './figma-client.js';
 import { isPatched, patchFigma, unpatchFigma, getFigmaCommand, getCdpPort, getFigmaBinaryPath } from './figma-patch.js';
+import { buildNodeInspectionCode, formatNodeTree } from './node-inspect.js';
 
 // Daemon configuration
 const DAEMON_PORT = 3456;
@@ -111,6 +112,11 @@ async function fastEval(code) {
   // Fall back to direct connection
   const client = await getFigmaClient();
   return await client.eval(code);
+}
+
+async function inspectNodeSnapshot(options = {}) {
+  const code = buildNodeInspectionCode(options);
+  return await fastEval(code);
 }
 
 // Fast render via daemon (falls back to direct connection)
@@ -4490,34 +4496,25 @@ else {
 program
   .command('get [nodeId]')
   .description('Get properties of node or selection')
-  .action(async (nodeId) => {
+  .option('-d, --depth <n>', 'Include child nodes up to depth', '0')
+  .option('--shared <namespace>', 'Include shared plugin data for namespace')
+  .action(async (nodeId, options) => {
     await checkConnection();
-    const nodeSelector = nodeId
-      ? `const node = await figma.getNodeByIdAsync('${nodeId}');`
-      : `const node = figma.currentPage.selection[0];`;
-    let code = `(async () => {
-${nodeSelector}
-if (!node) return 'No node found';
-return JSON.stringify({
-  id: node.id,
-  name: node.name,
-  type: node.type,
-  x: node.x,
-  y: node.y,
-  width: node.width,
-  height: node.height,
-  visible: node.visible,
-  locked: node.locked,
-  opacity: node.opacity,
-  rotation: node.rotation,
-  cornerRadius: node.cornerRadius,
-  layoutMode: node.layoutMode,
-  fills: node.fills?.length,
-  strokes: node.strokes?.length,
-  children: node.children?.length
-}, null, 2);
-})()`;
-    await runEvalCommand(code, { silent: false });
+    try {
+      const result = await inspectNodeSnapshot({
+        nodeId,
+        depth: options.depth,
+        sharedNamespace: options.shared,
+        fallbackToPage: false
+      });
+      if (result?.error) {
+        console.log(chalk.red('✗ ' + result.error));
+        return;
+      }
+      console.log(JSON.stringify(result, null, 2));
+    } catch (e) {
+      console.log(chalk.red('✗ Get failed: ' + e.message));
+    }
   });
 
 // ============ FIND ============

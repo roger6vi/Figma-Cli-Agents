@@ -124,28 +124,42 @@ launch_agent() {
     echo -e "  ${BOLD}Select an AI Agent:${NC}"
     echo "    1) Claude Code (claude)"
     echo "    2) Codex (codex)"
+    echo "    3) Gemini (gemini)"
     echo ""
-    printf "  Enter choice [1/2, default: 1]: "
+    printf "  Enter choice [1/2/3, default: 1]: "
     read -r agent_choice < /dev/tty
 
     echo ""
     cd "$REPO_PATH" || exit 1
-    AGENT_CONTEXT="This session is for the figma-cli repo at $REPO_PATH. This is a live Figma Desktop session, not a .pen/Pencil project. Use AGENTS.md and the figma-cli commands from this repo. Do not use Pencil MCP tools or ask for a .pen file."
+    AGENT_CONTEXT="This session is for the figma-cli repo at $REPO_PATH. This is a live Figma Desktop session. Use AGENTS.md and the figma-cli commands from this repo."
     if [ "$SAFE_MODE" = true ]; then
         AGENT_CONTEXT="$AGENT_CONTEXT Safe Mode is already active and the FigCli plugin is already connected unless a real figma-cli command proves otherwise."
     else
         AGENT_CONTEXT="$AGENT_CONTEXT The session was started from fig-start in Yolo Mode unless the user says otherwise."
     fi
-    
-    if [ "$agent_choice" = "2" ]; then
-        echo -e "  ${GREEN}Launching Codex...${NC}"
-        echo ""
-        exec codex --dangerously-bypass-approvals-and-sandbox -C "$REPO_PATH" "$AGENT_CONTEXT"
-    else
-        echo -e "  ${GREEN}Launching Claude Code...${NC}"
-        echo ""
-        exec claude --dangerously-skip-permissions --append-system-prompt "$AGENT_CONTEXT"
-    fi
+
+    case "$agent_choice" in
+        2|codex|Codex)
+            echo -e "  ${GREEN}Launching Codex...${NC}"
+            echo ""
+            exec codex --dangerously-bypass-approvals-and-sandbox -C "$REPO_PATH" "$AGENT_CONTEXT"
+            ;;
+        3|gemini|Gemini)
+            if ! command -v gemini > /dev/null 2>&1; then
+                echo -e "  ${RED}Gemini is not installed or not on PATH.${NC}"
+                echo "  Install it first, then run fig-start again."
+                exit 1
+            fi
+            echo -e "  ${GREEN}Launching Gemini...${NC}"
+            echo ""
+            exec gemini --approval-mode yolo -i "$AGENT_CONTEXT"
+            ;;
+        *)
+            echo -e "  ${GREEN}Launching Claude Code...${NC}"
+            echo ""
+            exec claude --dangerously-skip-permissions --append-system-prompt "$AGENT_CONTEXT"
+            ;;
+    esac
 }
 
 # ── Main ──
