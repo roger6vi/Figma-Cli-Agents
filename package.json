@@ -1,6 +1,6 @@
 {
   "name": "figma-ds-cli",
-  "version": "1.2.0",
+  "version": "1.1.0",
   "description": "CLI for controlling Figma Desktop from Claude Code, Codex, and Gemini. No API key required.",
   "author": "Sil Bormüller",
   "license": "MIT",
@@ -12,6 +12,7 @@
   },
   "files": [
     "AGENTS.md",
+    "CHANGELOG.md",
     "GEMINI.md",
     "src",
     "bin",

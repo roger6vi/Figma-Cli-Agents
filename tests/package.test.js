@@ -35,6 +35,7 @@ describe('npm package contents', () => {
     const files = getPackedFiles();
 
     assert.ok(files.includes('AGENTS.md'));
+    assert.ok(files.includes('CHANGELOG.md'));
     assert.ok(files.includes('GEMINI.md'));
   });
 

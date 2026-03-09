@@ -99,7 +99,7 @@
             parent.postMessage({ pluginMessage: { type: 'connected' } }, '*');
 
             // Send hello
-            ws.send(JSON.stringify({ type: 'hello', mode: 'plugin', version: '1.2.0' }));
+            ws.send(JSON.stringify({ type: 'hello', mode: 'plugin', version: '1.1.0' }));
 
             // Start keepalive (ping every 10s)
             startKeepalive();
