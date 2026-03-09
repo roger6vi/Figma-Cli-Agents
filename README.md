@@ -1,20 +1,6 @@
 # Figma-Cli-Agents
 
 <p align="center">
-  <a href="https://github.com/roger6vi/Figma-Cli-Agents/releases/tag/v1.1.0"><img src="https://img.shields.io/badge/Current_Release-v1.1.0-0f766e?style=for-the-badge" alt="Current Release v1.1.0"></a>
-  <a href="https://github.com/roger6vi/Figma-Cli-Agents/releases/tag/v1.1.0"><img src="https://img.shields.io/badge/Signed_Tag-Verified-111827?style=for-the-badge&logo=gnuprivacyguard" alt="Signed Tag Verified"></a>
-  <a href="./CHANGELOG.md"><img src="https://img.shields.io/badge/CHANGELOG-Track_Every_Release-f59e0b?style=for-the-badge" alt="Changelog"></a>
-</p>
-
-<table align="center">
-  <tr>
-    <td align="center"><strong>Version</strong><br><code>v1.1.0</code></td>
-    <td align="center"><strong>Initial Snapshot</strong><br><code>v1.0.0</code></td>
-    <td align="center"><strong>Release Notes</strong><br><a href="./CHANGELOG.md">CHANGELOG.md</a></td>
-  </tr>
-</table>
-
-<p align="center">
   <i>Agent-first Figma Desktop automation with signed releases and versioned change history.</i>
 </p>
 
