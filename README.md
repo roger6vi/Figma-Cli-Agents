@@ -84,7 +84,7 @@ It talks to Figma Desktop directly via CDP or the local plugin bridge.
 ## Setup
 
 ```bash
-git clone git@github.com:roger6vi/Figma-Cli-Agents.git
+git clone https://github.com/roger6vi/Figma-Cli-Agents.git
 cd Figma-Cli-Agents
 npm install
 npm run setup-alias
