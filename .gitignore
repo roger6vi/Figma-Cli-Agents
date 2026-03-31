@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+nul
+src/.figma-client-*.mjs
+*.tgz
+*.log
