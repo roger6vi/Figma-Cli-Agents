@@ -7,6 +7,7 @@
 #   fig-start          → Yolo Mode (default) with file selector
 #   fig-start --safe   → Safe Mode (plugin-based, no patching)
 #   fig-start --setup  → set/change the figma-cli repo path
+#   fig-start --init   → initialize current directory for figma-cli (copies AGENTS.md, creates CLAUDE.md)
 
 CONFIG_DIR="$HOME/.figma-cli"
 CONFIG_FILE="$CONFIG_DIR/config.json"
@@ -37,23 +38,115 @@ get_daemon_token() {
     fi
 }
 
-get_repo_path() {
+get_config_value() {
     if [ -f "$CONFIG_FILE" ]; then
-        python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('repoPath',''))" 2>/dev/null
+        python3 - "$CONFIG_FILE" "$1" <<'PY' 2>/dev/null
+import json, sys
+path, key = sys.argv[1:3]
+with open(path) as f:
+    cfg = json.load(f)
+value = cfg.get(key, '')
+if value is not None:
+    print(value)
+PY
     fi
 }
 
-save_repo_path() {
+save_config_value() {
     mkdir -p "$CONFIG_DIR"
-    python3 -c "
-import json, os
-path = '$CONFIG_FILE'
+    python3 - "$CONFIG_FILE" "$1" "$2" <<'PY'
+import json, os, sys
+path, key, value = sys.argv[1:4]
 cfg = {}
 if os.path.exists(path):
-    with open(path) as f: cfg = json.load(f)
-cfg['repoPath'] = '$1'
-with open(path, 'w') as f: json.dump(cfg, f, indent=2)
-"
+    with open(path) as f:
+        cfg = json.load(f)
+cfg[key] = value
+with open(path, 'w') as f:
+    json.dump(cfg, f, indent=2)
+PY
+}
+
+get_repo_path() {
+    get_config_value "repoPath"
+}
+
+save_repo_path() {
+    save_config_value "repoPath" "$1"
+}
+
+normalize_desktop_app() {
+    local value="${1,,}"
+    case "$value" in
+        beta|"figma beta"|figma-beta)
+            printf 'beta'
+            ;;
+        *)
+            printf 'stable'
+            ;;
+    esac
+}
+
+get_desktop_app() {
+    normalize_desktop_app "$(get_config_value "desktopApp")"
+}
+
+save_desktop_app() {
+    save_config_value "desktopApp" "$(normalize_desktop_app "$1")"
+}
+
+get_desktop_app_label() {
+    case "$(normalize_desktop_app "$1")" in
+        beta)
+            printf 'Figma Beta'
+            ;;
+        *)
+            printf 'Figma'
+            ;;
+    esac
+}
+
+get_desktop_app_process_name() {
+    case "$(normalize_desktop_app "$1")" in
+        beta)
+            printf 'Figma Beta'
+            ;;
+        *)
+            printf 'Figma'
+            ;;
+    esac
+}
+
+select_desktop_app() {
+    local saved_app default_choice app_choice
+    saved_app="$(get_desktop_app)"
+    if [ "$saved_app" = "beta" ]; then
+        default_choice="2"
+    else
+        default_choice="1"
+    fi
+
+    echo -e "  ${BOLD}Select a Desktop App:${NC}"
+    echo "    1) Figma"
+    echo "    2) Figma Beta"
+    echo ""
+    printf "  Enter choice [1/2, default: %s]: " "$default_choice"
+    read -r app_choice < /dev/tty
+    echo ""
+
+    case "$app_choice" in
+        2|beta|Beta|"Figma Beta"|"figma beta")
+            DESKTOP_APP="beta"
+            ;;
+        *)
+            DESKTOP_APP="stable"
+            ;;
+    esac
+
+    DESKTOP_APP_LABEL="$(get_desktop_app_label "$DESKTOP_APP")"
+    DESKTOP_APP_PROCESS="$(get_desktop_app_process_name "$DESKTOP_APP")"
+    save_desktop_app "$DESKTOP_APP"
+    export FIGMA_DESKTOP_APP="$DESKTOP_APP"
 }
 
 # ── Arrow-key selector (same UX as fancoolo-start) ──
@@ -130,19 +223,42 @@ launch_agent() {
     read -r agent_choice < /dev/tty
 
     echo ""
-    cd "$REPO_PATH" || exit 1
-    AGENT_CONTEXT="This session is for the figma-cli repo at $REPO_PATH. This is a live Figma Desktop session. Use AGENTS.md and the figma-cli commands from this repo."
+    AGENT_CONTEXT="This is a live Figma Desktop session. The figma-cli tool is available at $REPO_PATH. Use the figma-cli commands (e.g. node $CLI <command>) to interact with Figma. Working directory: $(pwd)."
+    AGENT_CONTEXT="$AGENT_CONTEXT Selected desktop app: $DESKTOP_APP_LABEL."
     if [ "$SAFE_MODE" = true ]; then
         AGENT_CONTEXT="$AGENT_CONTEXT Safe Mode is already active and the FigCli plugin is already connected unless a real figma-cli command proves otherwise."
     else
         AGENT_CONTEXT="$AGENT_CONTEXT The session was started from fig-start in Yolo Mode unless the user says otherwise."
     fi
 
+    # Project context
+    if [ -n "$FIGMA_PROJECT_DIR" ]; then
+        AGENT_CONTEXT="$AGENT_CONTEXT Project directory: $FIGMA_PROJECT_DIR. Save scripts, exports, and generated files there to keep projects isolated."
+        if [ -n "$SELECTED_TITLE" ]; then
+            AGENT_CONTEXT="$AGENT_CONTEXT Current Figma file: $SELECTED_TITLE."
+        fi
+    fi
+
+    # Skills context
+    GLOBAL_SKILLS_DIR="$CONFIG_DIR/skills"
+    if [ -d "$GLOBAL_SKILLS_DIR" ]; then
+        SKILL_LIST=$(ls "$GLOBAL_SKILLS_DIR"/*.md "$GLOBAL_SKILLS_DIR"/*.js 2>/dev/null | xargs -I {} basename {} | tr '\n' ', ' | sed 's/,$//')
+        if [ -n "$SKILL_LIST" ]; then
+            AGENT_CONTEXT="$AGENT_CONTEXT Global skills available: $SKILL_LIST. Use 'node $CLI skills show <name>' to read them."
+        fi
+    fi
+    if [ -n "$FIGMA_PROJECT_DIR" ] && [ -d "$FIGMA_PROJECT_DIR/skills" ]; then
+        PROJ_SKILL_LIST=$(ls "$FIGMA_PROJECT_DIR/skills"/*.md "$FIGMA_PROJECT_DIR/skills"/*.js 2>/dev/null | xargs -I {} basename {} | tr '\n' ', ' | sed 's/,$//')
+        if [ -n "$PROJ_SKILL_LIST" ]; then
+            AGENT_CONTEXT="$AGENT_CONTEXT Project skills: $PROJ_SKILL_LIST."
+        fi
+    fi
+
     case "$agent_choice" in
         2|codex|Codex)
             echo -e "  ${GREEN}Launching Codex...${NC}"
             echo ""
-            exec codex --dangerously-bypass-approvals-and-sandbox -C "$REPO_PATH" "$AGENT_CONTEXT"
+            exec codex --dangerously-bypass-approvals-and-sandbox "$AGENT_CONTEXT"
             ;;
         3|gemini|Gemini)
             if ! command -v gemini > /dev/null 2>&1; then
@@ -184,6 +300,128 @@ if [ "$1" = "--setup" ]; then
     exit 0
 fi
 
+if [ "$1" = "--init" ]; then
+    # Resolve repo path first
+    REPO_PATH=$(get_repo_path)
+    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
+        REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+        if [ -f "$REPO_ROOT/src/index.js" ]; then
+            REPO_PATH="$REPO_ROOT"
+        else
+            echo -e "${RED}figma-cli repo not configured.${NC} Run ${BOLD}fig-start --setup${NC} first."
+            exit 1
+        fi
+    fi
+
+    echo ""
+    echo -e "${BOLD}  fig-start --init${NC} ${DIM}— Initialize project for Figma CLI${NC}"
+    echo ""
+
+    # Copy AGENTS.md
+    if [ -f "./AGENTS.md" ]; then
+        echo -e "  ${YELLOW}AGENTS.md already exists${NC} — skipped"
+    else
+        cp "$REPO_PATH/AGENTS.md" ./AGENTS.md
+        echo -e "  ${GREEN}✓${NC} AGENTS.md copied (figma-cli command reference)"
+    fi
+
+    # Copy REFERENCE.md if it exists
+    if [ -f "$REPO_PATH/REFERENCE.md" ]; then
+        if [ -f "./REFERENCE.md" ]; then
+            echo -e "  ${YELLOW}REFERENCE.md already exists${NC} — skipped"
+        else
+            cp "$REPO_PATH/REFERENCE.md" ./REFERENCE.md
+            echo -e "  ${GREEN}✓${NC} REFERENCE.md copied (full command reference)"
+        fi
+    fi
+
+    # Create CLAUDE.md template if it doesn't exist
+    if [ -f "./CLAUDE.md" ]; then
+        echo -e "  ${YELLOW}CLAUDE.md already exists${NC} — skipped"
+    else
+        cat > ./CLAUDE.md << 'TEMPLATE'
+# Instructions
+
+## Figma CLI
+
+This project uses figma-cli for Figma Desktop integration.
+Read `AGENTS.md` for the full command reference before interacting with Figma.
+
+CLI location: Use `node <REPO_PATH>/src/index.js <command>` to run figma-cli commands.
+
+## Project-specific instructions
+
+<!-- Add your project-specific instructions, skills, and conventions below -->
+
+TEMPLATE
+        # Replace <REPO_PATH> with the actual path
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s|<REPO_PATH>|$REPO_PATH|g" ./CLAUDE.md
+        else
+            sed -i "s|<REPO_PATH>|$REPO_PATH|g" ./CLAUDE.md
+        fi
+        echo -e "  ${GREEN}✓${NC} CLAUDE.md created (project template)"
+    fi
+
+    # Create README.md
+    PROJ_NAME=$(basename "$(pwd)")
+    if [ -f "./README.md" ]; then
+        echo -e "  ${YELLOW}README.md already exists${NC} — skipped"
+    else
+        cat > ./README.md << READMEEOF
+# $PROJ_NAME
+
+## Description
+
+<!-- What is this project about? -->
+
+## Getting started
+
+This project uses [figma-cli](https://github.com/roger6vi/Figma-Cli-Agents) for Figma Desktop integration.
+
+\`\`\`bash
+# Launch a Figma session
+fig-start
+\`\`\`
+
+## Structure
+
+<!-- Describe the project structure as it evolves -->
+
+## Notes
+
+<!-- Any additional notes about the project -->
+READMEEOF
+        echo -e "  ${GREEN}✓${NC} README.md created (project documentation)"
+    fi
+
+    # Create CHANGELOG.md
+    if [ -f "./CHANGELOG.md" ]; then
+        echo -e "  ${YELLOW}CHANGELOG.md already exists${NC} — skipped"
+    else
+        INIT_DATE=$(date +%Y-%m-%d)
+        cat > ./CHANGELOG.md << CHANGELOGEOF
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [$INIT_DATE] — Project initialized
+
+- Initialized project with figma-cli (\`fig-start --init\`)
+- Created base files: CLAUDE.md, AGENTS.md, REFERENCE.md
+CHANGELOGEOF
+        echo -e "  ${GREEN}✓${NC} CHANGELOG.md created (change log)"
+    fi
+
+    echo ""
+    echo -e "  ${GREEN}Done!${NC} You can now:"
+    echo -e "    - Edit ${BOLD}CLAUDE.md${NC} to add project-specific instructions"
+    echo -e "    - Edit ${BOLD}README.md${NC} to document your project"
+    echo -e "    - Run ${BOLD}fig-start${NC} from this directory to launch a session"
+    echo ""
+    exit 0
+fi
+
 # Resolve repo path
 REPO_PATH=$(get_repo_path)
 
@@ -216,10 +454,14 @@ else
 fi
 echo ""
 
-# Step 1: Check if Figma is running, start if not
-if ! pgrep -x "Figma" > /dev/null 2>&1; then
-    echo -e "  ${YELLOW}Starting Figma...${NC}"
-    open -a Figma
+select_desktop_app
+echo -e "  ${GREEN}Desktop app:${NC} ${BOLD}${DESKTOP_APP_LABEL}${NC}"
+echo ""
+
+# Step 1: Check if the selected desktop app is running, start it if not
+if ! pgrep -x "$DESKTOP_APP_PROCESS" > /dev/null 2>&1; then
+    echo -e "  ${YELLOW}Starting ${DESKTOP_APP_LABEL}...${NC}"
+    open -a "$DESKTOP_APP_LABEL"
     sleep 3
 fi
 
@@ -229,7 +471,6 @@ if [ "$SAFE_MODE" = true ]; then
     # Run connect --safe interactively so user sees plugin setup instructions
     echo -e "  ${BOLD}🔒 Safe Mode${NC} — plugin-based, no patching required"
     echo ""
-    cd "$REPO_PATH" || exit 1
     node "$CLI" connect --safe
     if [ $? -ne 0 ]; then
         echo -e "  ${RED}Connection failed.${NC}"
@@ -264,7 +505,7 @@ else
         echo -e "  ${GREEN}✓ Connected${NC}"
     else
         # Not accessible — run full connect (will kill + restart Figma)
-        echo -e "  Connecting to Figma..."
+        echo -e "  Connecting to ${DESKTOP_APP_LABEL}..."
         CONNECT_OUT=$(node "$CLI" connect 2>&1)
         if [ $? -ne 0 ]; then
             echo -e "  ${RED}Connection failed:${NC}"
@@ -283,7 +524,7 @@ else
     FILES_JSON=$(node "$CLI" files 2>/dev/null)
 
     if [ -z "$FILES_JSON" ] || echo "$FILES_JSON" | grep -q '"error"'; then
-        echo -e "  ${RED}Could not list files.${NC} Is Figma open with a file?"
+        echo -e "  ${RED}Could not list files.${NC} Is ${DESKTOP_APP_LABEL} open with a file?"
         exit 1
     fi
 
@@ -302,7 +543,7 @@ for f in files:
 " 2>/dev/null)
 
     if [ ${#FILE_TITLES[@]} -eq 0 ]; then
-        echo -e "  ${YELLOW}No Figma files detected.${NC} Open a file in Figma first."
+        echo -e "  ${YELLOW}No Figma files detected.${NC} Open a file in ${DESKTOP_APP_LABEL} first."
         echo ""
         echo -e "  Launching AI Agent anyway..."
         echo ""
@@ -319,6 +560,43 @@ for f in files:
     fi
 
     echo -e "  ${GREEN}✓ File: ${BOLD}${SELECTED_TITLE}${NC}"
+
+    # Step 3b: Resolve project directory for the selected file
+    SELECTED_FILE_KEY=$(echo "$FILES_JSON" | python3 -c "
+import json, sys, re
+files = json.load(sys.stdin)
+title = sys.argv[1]
+for f in files:
+    t = f.get('title', 'Untitled').replace(' – Figma', '').replace(' - Figma', '')
+    if t == title:
+        url = f.get('url', '')
+        m = re.search(r'/(design|board)/([^/]+)', url)
+        print(m.group(2) if m else '')
+        break
+" "$SELECTED_TITLE" 2>/dev/null)
+
+    SELECTED_FILE_URL=$(echo "$FILES_JSON" | python3 -c "
+import json, sys
+files = json.load(sys.stdin)
+title = sys.argv[1]
+for f in files:
+    t = f.get('title', 'Untitled').replace(' – Figma', '').replace(' - Figma', '')
+    if t == title:
+        print(f.get('url', ''))
+        break
+" "$SELECTED_TITLE" 2>/dev/null)
+
+    RESOLVE_ARGS="--title \"$SELECTED_TITLE\""
+    [ -n "$SELECTED_FILE_KEY" ] && RESOLVE_ARGS="$RESOLVE_ARGS --file-key \"$SELECTED_FILE_KEY\""
+    [ -n "$SELECTED_FILE_URL" ] && RESOLVE_ARGS="$RESOLVE_ARGS --url \"$SELECTED_FILE_URL\""
+
+    PROJECT_DIR=$(eval node "$CLI" project resolve $RESOLVE_ARGS 2>/dev/null)
+
+    if [ -n "$PROJECT_DIR" ]; then
+        export FIGMA_PROJECT_DIR="$PROJECT_DIR"
+        echo -e "  ${GREEN}✓ Project:${NC} ${DIM}$PROJECT_DIR${NC}"
+    fi
+
     echo ""
 
     # Step 4: Launch AI Agent from repo directory

@@ -12,24 +12,24 @@ CLI that controls Figma Desktop directly. No API key needed.
 
 ## Quick Reference
 
-| User says | Command |
-|-----------|---------|
-| "connect to figma" | `node src/index.js connect` |
-| "add shadcn colors" | `node src/index.js tokens preset shadcn` |
-| "add tailwind colors" | `node src/index.js tokens tailwind` |
-| "show colors on canvas" | `node src/index.js var visualize` |
-| "create cards/buttons" | `render-batch` + `node to-component` |
-| "create a rectangle/frame" | `node src/index.js render '<Frame>...'` |
-| "convert to component" | `node src/index.js node to-component "ID"` |
-| "list variables" | `node src/index.js var list` |
-| "find nodes named X" | `node src/index.js find "X"` |
-| "what's on canvas" | `node src/index.js canvas info` |
-| "export as PNG/SVG" | `node src/index.js export png` |
-| "show all variants" | `node src/index.js combos` |
-| "create size variants" | `node src/index.js sizes --base small` |
-| "create a slot" | `node src/index.js slot create "Name"` |
-| "list slots" | `node src/index.js slot list` |
-| "reset slot" | `node src/index.js slot reset` |
+| User says                      | Command                                    |
+| ------------------------------ | ------------------------------------------ |
+| "connect to figma"             | `node src/index.js connect`                |
+| "add shadcn colors"            | `node src/index.js tokens preset shadcn`   |
+| "add tailwind colors"          | `node src/index.js tokens tailwind`        |
+| "show colors on canvas"        | `node src/index.js var visualize`          |
+| "create cards/buttons"         | `render-batch` + `node to-component`       |
+| "create a rectangle/frame"     | `node src/index.js render '<Frame>...'`    |
+| "convert to component"         | `node src/index.js node to-component "ID"` |
+| "list variables"               | `node src/index.js var list`               |
+| "find nodes named X"           | `node src/index.js find "X"`               |
+| "what's on canvas"             | `node src/index.js canvas info`            |
+| "export as PNG/SVG"            | `node src/index.js export png`             |
+| "show all variants"            | `node src/index.js combos`                 |
+| "create size variants"         | `node src/index.js sizes --base small`     |
+| "create a slot"                | `node src/index.js slot create "Name"`     |
+| "list slots"                   | `node src/index.js slot list`              |
+| "reset slot"                   | `node src/index.js slot reset`             |
 
 **Full command reference:** See REFERENCE.md
 
@@ -38,18 +38,24 @@ CLI that controls Figma Desktop directly. No API key needed.
 ## Design Tokens
 
 "Add shadcn colors":
+
 ```bash
 node src/index.js tokens preset shadcn   # 244 primitives + 32 semantic (Light/Dark)
+
 ```
 
 "Add tailwind colors":
+
 ```bash
 node src/index.js tokens tailwind        # 242 primitive colors only
+
 ```
 
 "Create design system":
+
 ```bash
 node src/index.js tokens ds              # IDS Base colors
+
 ```
 
 **shadcn vs tailwind:**
@@ -57,9 +63,11 @@ node src/index.js tokens ds              # IDS Base colors
 - `tokens tailwind` = Just the Tailwind color palette (primitives only)
 
 "Delete all variables":
+
 ```bash
 node src/index.js var delete-all                    # All collections
 node src/index.js var delete-all -c "primitives"    # Only specific collection
+
 ```
 
 **Note:** `var list` only SHOWS existing variables. Use `tokens` commands to CREATE them.
@@ -71,6 +79,7 @@ node src/index.js var delete-all -c "primitives"    # Only specific collection
 Use `var:name` syntax to bind variables directly at creation time (currently searches shadcn collections):
 
 ### Create Commands with var:
+
 ```bash
 node src/index.js create rect "Card" --fill "var:card" --stroke "var:border"
 node src/index.js create circle "Avatar" --fill "var:primary"
@@ -79,19 +88,24 @@ node src/index.js create line -c "var:border"
 node src/index.js create frame "Section" --fill "var:background"
 node src/index.js create autolayout "Container" --fill "var:muted"
 node src/index.js create icon lucide:star -c "var:primary"
+
 ```
 
 ### JSX render with var:
+
 ```bash
 node src/index.js render '<Frame bg="var:card" stroke="var:border" rounded={12} p={24}>
   <Text color="var:foreground" size={18}>Title</Text>
 </Frame>'
+
 ```
 
 ### Set commands with var:
+
 ```bash
 node src/index.js set fill "var:primary"
 node src/index.js set stroke "var:border"
+
 ```
 
 **Variables:** `background`, `foreground`, `card`, `primary`, `secondary`, `muted`, `accent`, `border`, and their `-foreground` variants.
@@ -102,14 +116,18 @@ node src/index.js set stroke "var:border"
 
 ### Yolo Mode (Recommended)
 Patches Figma once, then connects directly. Fully automatic.
+
 ```bash
 node src/index.js connect
+
 ```
 
 ### Safe Mode
 Uses plugin, no Figma modification. Start plugin each session.
+
 ```bash
 node src/index.js connect --safe
+
 ```
 Then: Plugins → Development → FigCli
 
@@ -141,6 +159,7 @@ node src/index.js node to-component "ID1" "ID2"
 
 # Step 3: Bind variables
 node src/index.js bind fill "zinc/900" -n "ID1"
+
 ```
 
 ---
@@ -157,6 +176,7 @@ For complex multi-element components, use a **single eval** with native Figma AP
 5. **Equal height** - use `layoutAlign: "STRETCH"` and `layoutGrow: 1`
 
 ### Fallback Colors (Dark Theme)
+
 ```javascript
 const colors = {
   bg: { r: 0.09, g: 0.09, b: 0.11 },       // #17171c
@@ -167,9 +187,11 @@ const colors = {
   muted: { r: 0.6, g: 0.6, b: 0.65 },      // #999aa6
   white: { r: 1, g: 1, b: 1 }
 };
+
 ```
 
 ### Variable Detection
+
 ```javascript
 // Check for ANY variables, not just shadcn
 const collections = await figma.variables.getLocalVariableCollectionsAsync();
@@ -178,9 +200,11 @@ if (collections.length > 0) {
 } else {
   // Use fallback colors
 }
+
 ```
 
 ### Equal Height Cards
+
 ```javascript
 // After creating cards in container:
 for (const card of container.children) {
@@ -192,6 +216,7 @@ for (const card of container.children) {
     }
   }
 }
+
 ```
 
 ---
@@ -210,6 +235,7 @@ node src/index.js render '<Frame name="Landing Page" w={1440} flex="col" bg="#0a
     <Frame flex="col" gap={12} grow={1}><Text size={24} weight="bold" color="#fff">Feature 1</Text></Frame>
   </Frame>
 </Frame>'
+
 ```
 
 ---
@@ -242,6 +268,7 @@ node src/index.js slot convert --name "Actions"
 node src/index.js slot add "slot-id" --component "component-id"
 node src/index.js slot add "slot-id" --frame
 node src/index.js slot add "slot-id" --text "Hello"
+
 ```
 
 ### JSX Slot Syntax
@@ -255,6 +282,7 @@ Use `<Slot>` in JSX to create slots. When parent is a component, creates real SL
     <Text size={14} color="#a1a1aa">Default slot content</Text>
   </Slot>
 </Frame>
+
 ```
 
 **Slot props:**
@@ -266,13 +294,16 @@ Use `<Slot>` in JSX to create slots. When parent is a component, creates real SL
 - `bg` - Background fill
 
 **Self-closing slot (empty):**
+
 ```jsx
 <Slot name="Actions" flex="row" gap={8} />
+
 ```
 
 ### Slot Workflow
 
 1. **Create component with slot:**
+
 ```bash
 # Render component structure
 node src/index.js render '<Frame name="Card" ...>
@@ -281,17 +312,22 @@ node src/index.js render '<Frame name="Card" ...>
 
 # Convert to component
 node src/index.js node to-component "frame-id"
+
 ```
 
 2. **Or add slot to existing component:**
+
 ```bash
 # Select component, then:
 node src/index.js slot create "Content" --flex col --gap 8
+
 ```
 
 3. **Set preferred components:**
+
 ```bash
 node src/index.js slot preferred "Slot#1:2" "button-comp-id" "icon-comp-id"
+
 ```
 
 4. **In instances, slots allow:**
@@ -346,6 +382,7 @@ rotate={45}             // rotation degrees
 // Text
 <Text size={18} weight="bold" color="#000" font="Inter">Hello</Text>
 <Text color="var:foreground">Text with variable color</Text>
+
 ```
 
 ### Fast Variable Binding (var: syntax)
@@ -360,6 +397,7 @@ Use `var:name` syntax to bind variables directly at creation time (FAST, no sepa
     <Text color="var:primary-foreground">Button</Text>
   </Frame>
 </Frame>
+
 ```
 
 **Available shadcn variables:**
@@ -377,9 +415,11 @@ Use `var:name` syntax to bind variables directly at creation time (FAST, no sepa
 - Works with complex nested structures
 
 **Also works with `set` commands:**
+
 ```bash
 node src/index.js set fill "var:primary"    # Bind fill to existing element
 node src/index.js set stroke "var:border"   # Bind stroke to existing element
+
 ```
 
 ### Auto-Layout
@@ -397,9 +437,11 @@ stretch={true}          // layoutAlign = 'STRETCH'
 
 // Absolute: position freely within parent
 position="absolute" x={12} y={12}  // must have name for x/y to work
+
 ```
 
 **Complete example:**
+
 ```bash
 node src/index.js render '<Frame name="Card" w={300} flex="col" bg="#18181b" rounded={12} overflow="hidden">
   <Frame w="fill" h={100} bg="#333" />
@@ -414,9 +456,11 @@ node src/index.js render '<Frame name="Card" w={300} flex="col" bg="#18181b" rou
     <Frame h="fill" bg="#333" grow={1} />
   </Frame>
 </Frame>'
+
 ```
 
 **Common mistakes (silently ignored, no error!):**
+
 ```
 WRONG                    RIGHT
 layout="horizontal"   →  flex="row"
@@ -426,11 +470,13 @@ cornerRadius={12}     →  rounded={12}
 fontSize={18}         →  size={18}
 fontWeight="bold"     →  weight="bold"
 justify="between"     →  use grow={1} spacer instead
+
 ```
 
 ### Layout Patterns
 
 **Push items to edges (navbar pattern):**
+
 ```jsx
 // justify="between" doesn't work reliably, use grow spacer instead
 <Frame flex="row" items="center">
@@ -438,9 +484,11 @@ justify="between"     →  use grow={1} spacer instead
   <Frame grow={1} justify="center">Nav Links</Frame>
   <Frame>Buttons</Frame>
 </Frame>
+
 ```
 
 **Badge at avatar corner:**
+
 ```jsx
 // Absolute x/y is relative to parent padding
 // Avatar at padding=24, size=100, badge=20
@@ -449,9 +497,11 @@ justify="between"     →  use grow={1} spacer instead
   <Frame w={100} h={100} rounded={50} />
   <Frame name="Badge" w={20} h={20} position="absolute" x={114} y={114} />
 </Frame>
+
 ```
 
 **Input at bottom (chat pattern):**
+
 ```jsx
 <Frame flex="col" h={400}>
   <Frame>Message 1</Frame>
@@ -459,18 +509,22 @@ justify="between"     →  use grow={1} spacer instead
   <Frame grow={1} />
   <Frame>Input field</Frame>
 </Frame>
+
 ```
 
 **Avoid content overflow:**
+
 ```jsx
 // BAD: fixed height too small for auto-sized children
 <Frame h={160} p={24}><Frame h={139} /></Frame>  // 139+48 > 160!
 
 // GOOD: ensure height fits content + padding
 <Frame h={200} p={24}><Frame h={139} /></Frame>  // 139+48 < 200 ✓
+
 ```
 
 **Complete card example:**
+
 ```bash
 node src/index.js render '<Frame name="Card" w={320} h={200} bg="#18181b" rounded={12} flex="col" p={24} gap={12}>
   <Text size={18} weight="bold" color="#fff">Title</Text>
@@ -479,11 +533,13 @@ node src/index.js render '<Frame name="Card" w={320} h={200} bg="#18181b" rounde
     <Text size={14} weight="medium" color="#fff">Button</Text>
   </Frame>
 </Frame>'
+
 ```
 
 ### Common Pitfalls
 
 **1. Text gets cut off (CRITICAL):**
+
 ```jsx
 // BAD: Text without w="fill" will be single line and clip
 <Frame flex="col" gap={8}>
@@ -496,6 +552,7 @@ node src/index.js render '<Frame name="Card" w={320} h={200} bg="#18181b" rounde
   <Text size={16} weight="semibold" color="#fff" w="fill">Title wraps properly</Text>
   <Text size={14} color="#a1a1aa" w="fill">Description wraps properly.</Text>
 </Frame>
+
 ```
 **Rule:** For text to wrap, you need:
 1. Parent frame with `w="fill"` or fixed width
@@ -509,6 +566,7 @@ node src/index.js render '<Frame name="Card" w={320} h={200} bg="#18181b" rounde
 - Any multi-word text
 
 **Real example - card with title AND description:**
+
 ```jsx
 <Frame name="Card" w={340} bg="#18181b" rounded={16} flex="col" p={20} gap={16}>
   <Frame flex="col" gap={8} w="fill">
@@ -516,9 +574,11 @@ node src/index.js render '<Frame name="Card" w={320} h={200} bg="#18181b" rounde
     <Text size={14} color="#a1a1aa" w="fill">Premium audio experience with 40-hour battery life.</Text>
   </Frame>
 </Frame>
+
 ```
 
 **2. Toggle switches - use flex, not absolute:**
+
 ```jsx
 // BAD: Absolute positioning for knob
 <Frame w={52} h={28} bg="#3b82f6" rounded={14} p={2}>
@@ -534,9 +594,11 @@ node src/index.js render '<Frame name="Card" w={320} h={200} bg="#18181b" rounde
 <Frame w={52} h={28} bg="#27272a" rounded={14} flex="row" items="center" p={2} justify="start">
   <Frame w={24} h={24} bg="#52525b" rounded={12} />
 </Frame>
+
 ```
 
 **3. Buttons need flex + fixed width for centered text:**
+
 ```jsx
 // BAD: No flex, text not centered
 <Frame bg="#3b82f6" px={16} py={10} rounded={10}>
@@ -552,9 +614,11 @@ node src/index.js render '<Frame name="Card" w={320} h={200} bg="#18181b" rounde
 <Frame w={100} h={40} bg="#3b82f6" rounded={8} flex="row" justify="center" items="center" px={16} py={10}>
   <Text color="#fff" w="fill" align="center">Button</Text>
 </Frame>
+
 ```
 
 **Button component pattern (for variants):**
+
 ```javascript
 // When creating button components programmatically:
 frame.layoutMode = "HORIZONTAL";
@@ -570,9 +634,11 @@ frame.paddingTop = frame.paddingBottom = 10;
 text.textAlignHorizontal = "CENTER";
 text.layoutAlign = "STRETCH";              // Fill available width
 text.layoutGrow = 1;                       // Grow to fill
+
 ```
 
 **4. No emojis - use shapes as icons:**
+
 ```jsx
 // BAD: Emojis render inconsistently
 <Text>🏠</Text>
@@ -580,18 +646,22 @@ text.layoutGrow = 1;                       // Grow to fill
 // GOOD: Use shapes as icon placeholders
 <Frame w={20} h={20} rounded={4} stroke="#fff" strokeWidth={2} />  // square icon
 <Frame w={20} h={20} rounded={10} stroke="#fff" strokeWidth={2} /> // circle icon
+
 ```
 
 **5. Three-dot menu icon:**
+
 ```jsx
 <Frame flex="row" gap={3} justify="center" items="center">
   <Frame w={4} h={4} bg="#52525b" rounded={2} />
   <Frame w={4} h={4} bg="#52525b" rounded={2} />
   <Frame w={4} h={4} bg="#52525b" rounded={2} />
 </Frame>
+
 ```
 
 **6. Star rating with shapes:**
+
 ```jsx
 <Frame flex="row" gap={4}>
   <Frame w={14} h={14} bg="#fbbf24" rounded={2} />
@@ -600,6 +670,7 @@ text.layoutGrow = 1;                       // Grow to fill
   <Frame w={14} h={14} bg="#fbbf24" rounded={2} />
   <Frame w={14} h={14} bg="#fbbf24" rounded={2} />
 </Frame>
+
 ```
 
 ---
@@ -630,9 +701,11 @@ If permission error (macOS): System Settings → Privacy → Full Disk Access �
 ## Variable Visualization
 
 "Show colors on canvas" / "display variables" / "create palette":
+
 ```bash
 node src/index.js var visualize              # All collections
 node src/index.js var visualize "primitives" # Filter
+
 ```
 
 Creates shadcn-style color swatches bound to variables.
@@ -644,6 +717,7 @@ Creates shadcn-style color swatches bound to variables.
 ```bash
 node src/index.js recreate-url "https://example.com" --name "Page"
 node src/index.js screenshot-url "https://example.com"
+
 ```
 
 ---
@@ -655,4 +729,64 @@ node src/index.js screenshot-url "https://example.com"
 ```bash
 node src/index.js daemon status
 node src/index.js daemon restart
+
 ```
+
+---
+
+## Project Isolation
+
+Each Figma file gets its own folder at `~/.figma-cli/projects/<slug>/` with scripts, exports, and skills separated.
+
+`fig-start` creates the project directory automatically when you select a file.
+
+```bash
+# List all projects
+node src/index.js project list
+
+# Show current project info (requires FIGMA_PROJECT_DIR)
+node src/index.js project info
+
+# Resolve/create project directory (used internally by fig-start)
+node src/index.js project resolve --title "My File" --file-key "ABC123"
+
+```
+
+### Project structure
+
+```text
+~/.figma-cli/projects/my-design-system/
+  project.json     # Manifest (title, fileKey, url, createdAt)
+  scripts/         # eval -f scripts (auto-resolved)
+  exports/         # Screenshots and exports (auto-redirected)
+  skills/          # Project-specific instructions (.md) and scripts (.js)
+
+```
+
+When `FIGMA_PROJECT_DIR` is set:
+
+- `eval -f script.js` looks in `<project>/scripts/` first, then cwd
+- `export screenshot` and `export node` save to `<project>/exports/` by default
+- Without `FIGMA_PROJECT_DIR`, everything works as before (cwd-based)
+
+---
+
+## Skills
+
+Skills are `.md` or `.js` files that provide instructions or reusable scripts. Global skills apply to all projects; project skills apply to one file.
+
+```bash
+# List all skills (global + project)
+node src/index.js skills list
+
+# Read a skill
+node src/index.js skills show naming-conventions
+
+```
+
+### Directories
+
+- Global: `~/.figma-cli/skills/`
+- Project: `~/.figma-cli/projects/<slug>/skills/`
+
+Project skills take priority over global skills with the same name.

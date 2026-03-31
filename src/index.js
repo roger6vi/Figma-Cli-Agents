@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { execFileSync, execSync, spawn } from 'child_process';
 import { randomBytes } from 'crypto';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, readdirSync } from 'fs';
 import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
@@ -14,7 +14,18 @@ import { homedir, platform, tmpdir } from 'os';
 import { createServer } from 'http';
 import { FigJamClient } from './figjam-client.js';
 import { FigmaClient } from './figma-client.js';
-import { isPatched, patchFigma, unpatchFigma, getFigmaCommand, getCdpPort, getFigmaBinaryPath } from './figma-patch.js';
+import {
+  isPatched,
+  patchFigma,
+  unpatchFigma,
+  getFigmaCommand,
+  getCdpPort,
+  getFigmaBinaryPath,
+  getSelectedDesktopApp,
+  getDesktopAppLabel,
+  getDesktopAppProcessName,
+  getDesktopAppVersionPlistPath
+} from './figma-patch.js';
 import { buildNodeInspectionCode, formatNodeTree } from './node-inspect.js';
 
 // Daemon configuration
@@ -39,8 +50,32 @@ function getDaemonToken() {
   }
 }
 
+function getDaemonHealthSync() {
+  try {
+    const token = getDaemonToken();
+    const tokenHeader = token ? ` -H "X-Daemon-Token: ${token}"` : '';
+    const response = execSync(`curl -s${tokenHeader} http://localhost:${DAEMON_PORT}/health`, {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      timeout: 1000
+    });
+    return JSON.parse(response);
+  } catch {
+    return null;
+  }
+}
+
 // Check if daemon is running
 function isDaemonRunning() {
+  try {
+    const health = getDaemonHealthSync();
+    return Boolean(health);
+  } catch {
+    return false;
+  }
+}
+
+function canUseDaemon() {
   try {
     const token = getDaemonToken();
     const tokenHeader = token ? ` -H "X-Daemon-Token: ${token}"` : '';
@@ -222,22 +257,25 @@ function startFigma() {
   const port = getCdpPort(); // Fixed port 9222 for figma-use compatibility
   const figmaPath = getFigmaPath();
   if (IS_MAC) {
-    execSync(`open -a Figma --args --remote-debugging-port=${port}`, { stdio: 'pipe' });
+    execSync(getFigmaCommand(port), { stdio: 'pipe' });
   } else if (IS_WINDOWS) {
+    if (!figmaPath) throw new Error(`Could not find ${getDesktopAppLabel()} executable`);
     spawn(figmaPath, [`--remote-debugging-port=${port}`], { detached: true, stdio: 'ignore' }).unref();
   } else {
+    if (!figmaPath) throw new Error(`Could not find ${getDesktopAppLabel()} binary`);
     spawn(figmaPath, [`--remote-debugging-port=${port}`], { detached: true, stdio: 'ignore' }).unref();
   }
 }
 
 function killFigma() {
+  const processName = getDesktopAppProcessName();
   try {
     if (IS_MAC) {
-      execSync('pkill -x Figma 2>/dev/null || true', { stdio: 'pipe' });
+      execSync(`pkill -x ${JSON.stringify(processName)} 2>/dev/null || true`, { stdio: 'pipe' });
     } else if (IS_WINDOWS) {
-      execSync('taskkill /IM Figma.exe /F 2>nul', { stdio: 'pipe' });
+      execSync(`taskkill /IM ${JSON.stringify(processName)} /F 2>nul`, { stdio: 'pipe' });
     } else {
-      execSync('pkill -x figma 2>/dev/null || true', { stdio: 'pipe' });
+      execSync(`pkill -x ${JSON.stringify(processName)} 2>/dev/null || true`, { stdio: 'pipe' });
     }
   } catch (e) {
     // Ignore errors if Figma wasn't running
@@ -257,6 +295,8 @@ const PLUGIN_MANIFEST_PATH = join(__dirname, '..', 'plugin', 'manifest.json');
 const CONFIG_DIR = join(homedir(), '.figma-cli');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const LEGACY_CONFIG_FILE = join(TMP_ROOT, '.figma-ds-cli', 'config.json');
+const PROJECTS_DIR = join(CONFIG_DIR, 'projects');
+const GLOBAL_SKILLS_DIR = join(CONFIG_DIR, 'skills');
 
 const program = new Command();
 const requireFromCli = createRequire(import.meta.url);
@@ -284,6 +324,145 @@ function loadConfig() {
 function saveConfig(config) {
   if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true });
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+}
+
+// ── Project isolation helpers ──
+
+function slugify(title) {
+  return title
+    .replace(/\s*[–-]\s*Figma$/i, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function getProjectDir() {
+  return process.env.FIGMA_PROJECT_DIR || null;
+}
+
+function resolveOutputPath(filename, subdirectory = 'exports') {
+  const projectDir = getProjectDir();
+  if (projectDir) {
+    const targetDir = join(projectDir, subdirectory);
+    if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
+    return join(targetDir, filename);
+  }
+  return filename;
+}
+
+function resolveScriptPath(filename) {
+  if (filename.startsWith('/')) return filename;
+  const projectDir = getProjectDir();
+  if (projectDir) {
+    const projectScript = join(projectDir, 'scripts', filename);
+    if (existsSync(projectScript)) return projectScript;
+  }
+  return filename;
+}
+
+function createOrGetProjectDir(title, fileKey, url) {
+  const slug = slugify(title);
+
+  // Try to find existing project by fileKey
+  if (fileKey && existsSync(PROJECTS_DIR)) {
+    const entries = readdirSync(PROJECTS_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = join(PROJECTS_DIR, entry.name, 'project.json');
+      if (existsSync(manifestPath)) {
+        try {
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+          if (manifest.fileKey === fileKey) {
+            if (manifest.title !== title) {
+              manifest.title = title;
+              writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+            }
+            return join(PROJECTS_DIR, entry.name);
+          }
+        } catch {}
+      }
+    }
+  }
+
+  // Avoid slug collisions
+  let projectDir = join(PROJECTS_DIR, slug);
+  if (existsSync(projectDir)) {
+    const manifestPath = join(projectDir, 'project.json');
+    if (existsSync(manifestPath)) {
+      try {
+        const existing = JSON.parse(readFileSync(manifestPath, 'utf8'));
+        if (existing.fileKey && fileKey && existing.fileKey !== fileKey) {
+          let counter = 2;
+          while (existsSync(join(PROJECTS_DIR, `${slug}-${counter}`))) counter++;
+          projectDir = join(PROJECTS_DIR, `${slug}-${counter}`);
+        } else {
+          if (existing.title !== title) {
+            existing.title = title;
+            writeFileSync(manifestPath, JSON.stringify(existing, null, 2));
+          }
+          return projectDir;
+        }
+      } catch {}
+    }
+  }
+
+  // Create new project directory
+  mkdirSync(join(projectDir, 'scripts'), { recursive: true });
+  mkdirSync(join(projectDir, 'exports'), { recursive: true });
+  mkdirSync(join(projectDir, 'skills'), { recursive: true });
+
+  const manifest = {
+    title,
+    slug,
+    fileKey: fileKey || null,
+    url: url || null,
+    createdAt: new Date().toISOString()
+  };
+  writeFileSync(join(projectDir, 'project.json'), JSON.stringify(manifest, null, 2));
+
+  return projectDir;
+}
+
+if (!process.env.FIGMA_DESKTOP_APP) {
+  const bootConfig = loadConfig();
+  if (bootConfig.desktopApp) {
+    process.env.FIGMA_DESKTOP_APP = bootConfig.desktopApp;
+  }
+}
+
+function getPatchedApps(config) {
+  return (config && typeof config.patchedApps === 'object' && config.patchedApps) ? config.patchedApps : {};
+}
+
+function isCurrentDesktopAppPatched(config = loadConfig()) {
+  const appKey = getSelectedDesktopApp();
+  const patchedApps = getPatchedApps(config);
+
+  if (patchedApps[appKey] === true) return true;
+  if (appKey === 'stable' && config.patched === true) return true;
+  return false;
+}
+
+function setCurrentDesktopAppPatched(config, patched) {
+  const appKey = getSelectedDesktopApp();
+  const patchedApps = { ...getPatchedApps(config) };
+
+  if (patched) {
+    patchedApps[appKey] = true;
+  } else {
+    delete patchedApps[appKey];
+  }
+
+  if (Object.keys(patchedApps).length > 0) {
+    config.patchedApps = patchedApps;
+  } else {
+    delete config.patchedApps;
+  }
+
+  config.patched = patchedApps.stable === true;
 }
 
 function createTempPath(prefix, extension = '') {
@@ -442,12 +621,24 @@ function figmaUse(args, options = {}) {
 
   if (args === 'status' || args.startsWith('status')) {
     try {
+      const health = getDaemonHealthSync();
+
+      if (health?.plugin && !health?.cdp) {
+        const result = figmaEvalSync(`(() => ({
+          file: figma.root.name,
+          page: figma.currentPage.name
+        }))()`);
+        const status = `Connected to Figma\n  Mode: Safe Mode\n  File: ${result.file}\n  Page: ${result.page}`;
+        if (!options.silent) console.log(status);
+        return status;
+      }
+
       const port = getCdpPort();
       const result = execSync(`curl -s http://localhost:${port}/json`, { encoding: 'utf8', stdio: 'pipe' });
       const pages = JSON.parse(result);
       const figmaPage = pages.find(p => p.url?.includes('figma.com/design') || p.url?.includes('figma.com/file'));
       if (figmaPage) {
-        const status = `Connected to Figma\n  File: ${figmaPage.title.replace(' – Figma', '')}`;
+        const status = `Connected to Figma\n  Mode: CDP\n  File: ${figmaPage.title.replace(' – Figma', '')}`;
         if (!options.silent) console.log(status);
         return status;
       }
@@ -567,8 +758,7 @@ function checkConnectionSync() {
 
 // Helper: Check if Figma is patched
 function isFigmaPatched() {
-  const config = loadConfig();
-  return config.patched === true;
+  return isCurrentDesktopAppPatched(loadConfig());
 }
 
 // Helper: Hex to Figma RGB (handles both #RGB and #RRGGBB)
@@ -590,6 +780,21 @@ function hexToRgb(hex) {
     g: parseInt(result[2], 16) / 255,
     b: parseInt(result[3], 16) / 255
   };
+}
+
+const ANNOTATION_CATEGORY_COLORS = ['yellow', 'orange', 'red', 'pink', 'violet', 'blue', 'teal', 'green'];
+
+function normalizeAnnotationCategoryColor(color) {
+  const normalized = String(color || '').trim().toLowerCase();
+  if (!ANNOTATION_CATEGORY_COLORS.includes(normalized)) {
+    throw new Error(`Invalid annotation color "${color}". Use one of: ${ANNOTATION_CATEGORY_COLORS.join(', ')}`);
+  }
+  return normalized;
+}
+
+function parseAnnotationProperties(value) {
+  if (!value) return [];
+  return [...new Set(String(value).split(',').map(part => part.trim()).filter(Boolean))];
 }
 
 // Helper: Check if value is a variable reference (var:name)
@@ -674,9 +879,10 @@ program
 // Default action when no command is given
 program.action(async () => {
   const config = loadConfig();
+  const desktopAppLabel = getDesktopAppLabel();
 
   // First time? Run init
-  if (!config.patched) {
+  if (!isCurrentDesktopAppPatched(config)) {
     showBanner();
     console.log(chalk.white('  Welcome! Let\'s get you set up.\n'));
     console.log(chalk.gray('  This takes about 30 seconds. No API key needed.\n'));
@@ -692,28 +898,28 @@ program.action(async () => {
     console.log(chalk.green(`  ✓ Node.js ${nodeVersion}`));
 
     // Step 2: Patch Figma
-    console.log(chalk.blue('\nStep 2/3: ') + 'Patching Figma Desktop...');
-    if (config.patched) {
-      console.log(chalk.green('  ✓ Figma already patched'));
+    console.log(chalk.blue('\nStep 2/3: ') + `Patching ${desktopAppLabel}...`);
+    if (isCurrentDesktopAppPatched(config)) {
+      console.log(chalk.green(`  ✓ ${desktopAppLabel} already patched`));
     } else {
       console.log(chalk.gray('  (This allows CLI to connect to Figma)'));
       const spinner = ora('  Patching...').start();
       try {
         const patchStatus = isPatched();
         if (patchStatus === true) {
-          config.patched = true;
+          setCurrentDesktopAppPatched(config, true);
           saveConfig(config);
-          spinner.succeed('Figma already patched');
+          spinner.succeed(`${desktopAppLabel} already patched`);
         } else if (patchStatus === false) {
           patchFigma();
-          config.patched = true;
+          setCurrentDesktopAppPatched(config, true);
           saveConfig(config);
-          spinner.succeed('Figma patched');
+          spinner.succeed(`${desktopAppLabel} patched`);
         } else {
           // Can't determine - assume it's fine (old Figma version)
-          config.patched = true;
+          setCurrentDesktopAppPatched(config, true);
           saveConfig(config);
-          spinner.succeed('Figma ready (no patch needed)');
+          spinner.succeed(`${desktopAppLabel} ready (no patch needed)`);
         }
       } catch (error) {
         spinner.fail('Patch failed: ' + error.message);
@@ -730,12 +936,12 @@ program.action(async () => {
     }
 
     // Step 3: Start Figma
-    console.log(chalk.blue('\nStep 3/3: ') + 'Starting Figma...');
+    console.log(chalk.blue('\nStep 3/3: ') + `Starting ${desktopAppLabel}...`);
     try {
       killFigma();
       await new Promise(r => setTimeout(r, 1000));
       startFigma();
-      console.log(chalk.green('  ✓ Figma started'));
+      console.log(chalk.green(`  ✓ ${desktopAppLabel} started`));
 
       // Wait for connection
       const spinner = ora('  Waiting for connection...').start();
@@ -747,12 +953,12 @@ program.action(async () => {
       }
 
       if (connected) {
-        spinner.succeed('Connected to Figma');
+        spinner.succeed(`Connected to ${desktopAppLabel}`);
       } else {
-        spinner.warn('Connection pending - open a file in Figma');
+        spinner.warn(`Connection pending - open a file in ${desktopAppLabel}`);
       }
     } catch (error) {
-      console.log(chalk.yellow('  ! Could not start Figma automatically'));
+      console.log(chalk.yellow(`  ! Could not start ${desktopAppLabel} automatically`));
       console.log(chalk.gray('    Start manually: ' + getManualStartCommand()));
     }
 
@@ -767,7 +973,7 @@ program.action(async () => {
 
   const connected = await FigmaClient.isConnected();
   if (connected) {
-    console.log(chalk.green('  ✓ Connected to Figma\n'));
+    console.log(chalk.green(`  ✓ Connected to ${desktopAppLabel}\n`));
     try {
       const client = new FigmaClient();
       await client.connect();
@@ -779,24 +985,24 @@ program.action(async () => {
     console.log();
     showQuickStart();
   } else {
-    console.log(chalk.yellow('  ⚠ Figma not connected\n'));
-    console.log(chalk.white('  Starting Figma...'));
+    console.log(chalk.yellow(`  ⚠ ${desktopAppLabel} not connected\n`));
+    console.log(chalk.white(`  Starting ${desktopAppLabel}...`));
     try {
       killFigma();
       await new Promise(r => setTimeout(r, 500));
       startFigma();
-      console.log(chalk.green('  ✓ Figma started\n'));
+      console.log(chalk.green(`  ✓ ${desktopAppLabel} started\n`));
 
       const spinner = ora('  Waiting for connection...').start();
       for (let i = 0; i < 8; i++) {
         await new Promise(r => setTimeout(r, 1000));
         if (await FigmaClient.isConnected()) {
-          spinner.succeed('Connected to Figma\n');
+          spinner.succeed(`Connected to ${desktopAppLabel}\n`);
           showQuickStart();
           return;
         }
       }
-      spinner.warn('Open a file in Figma to connect\n');
+      spinner.warn(`Open a file in ${desktopAppLabel} to connect\n`);
       showQuickStart();
     } catch {
       console.log(chalk.gray('  Start manually: ' + getManualStartCommand() + '\n'));
@@ -836,6 +1042,8 @@ program
   .description('Interactive setup wizard')
   .action(async () => {
     showBanner();
+    const config = loadConfig();
+    const desktopAppLabel = getDesktopAppLabel();
 
     console.log(chalk.white('  Welcome! Let\'s get you set up.\n'));
     console.log(chalk.gray('  This takes about 30 seconds. No API key needed.\n'));
@@ -851,28 +1059,27 @@ program
     console.log(chalk.green(`  ✓ Node.js ${nodeVersion}`));
 
     // Step 2: Patch Figma
-    console.log(chalk.blue('\nStep 2/3: ') + 'Patching Figma Desktop...');
-    const config = loadConfig();
-    if (config.patched) {
-      console.log(chalk.green('  ✓ Figma already patched'));
+    console.log(chalk.blue('\nStep 2/3: ') + `Patching ${desktopAppLabel}...`);
+    if (isCurrentDesktopAppPatched(config)) {
+      console.log(chalk.green(`  ✓ ${desktopAppLabel} already patched`));
     } else {
       console.log(chalk.gray('  (This allows CLI to connect to Figma)'));
       const spinner = ora('  Patching...').start();
       try {
         const patchStatus = isPatched();
         if (patchStatus === true) {
-          config.patched = true;
+          setCurrentDesktopAppPatched(config, true);
           saveConfig(config);
-          spinner.succeed('Figma already patched');
+          spinner.succeed(`${desktopAppLabel} already patched`);
         } else if (patchStatus === false) {
           patchFigma();
-          config.patched = true;
+          setCurrentDesktopAppPatched(config, true);
           saveConfig(config);
-          spinner.succeed('Figma patched');
+          spinner.succeed(`${desktopAppLabel} patched`);
         } else {
-          config.patched = true;
+          setCurrentDesktopAppPatched(config, true);
           saveConfig(config);
-          spinner.succeed('Figma ready (no patch needed)');
+          spinner.succeed(`${desktopAppLabel} ready (no patch needed)`);
         }
       } catch (error) {
         spinner.fail('Patch failed: ' + error.message);
@@ -889,12 +1096,12 @@ program
     }
 
     // Step 3: Start Figma
-    console.log(chalk.blue('\nStep 3/3: ') + 'Starting Figma...');
+    console.log(chalk.blue('\nStep 3/3: ') + `Starting ${desktopAppLabel}...`);
     try {
       killFigma();
       await new Promise(r => setTimeout(r, 1000));
       startFigma();
-      console.log(chalk.green('  ✓ Figma started'));
+      console.log(chalk.green(`  ✓ ${desktopAppLabel} started`));
 
       // Wait for connection
       const spinner = ora('  Waiting for connection...').start();
@@ -906,12 +1113,12 @@ program
       }
 
       if (connected) {
-        spinner.succeed('Connected to Figma');
+        spinner.succeed(`Connected to ${desktopAppLabel}`);
       } else {
-        spinner.warn('Connection pending - open a file in Figma');
+        spinner.warn(`Connection pending - open a file in ${desktopAppLabel}`);
       }
     } catch (error) {
-      console.log(chalk.yellow('  ! Could not start Figma automatically'));
+      console.log(chalk.yellow(`  ! Could not start ${desktopAppLabel} automatically`));
       console.log(chalk.gray('    Start manually: ' + getManualStartCommand()));
     }
 
@@ -943,14 +1150,27 @@ program
   .command('status')
   .description('Check connection to Figma')
   .action(() => {
-    // Check if first run
+    const status = figmaUse('status', { silent: true });
+    if (status && status !== 'Not connected') {
+      console.log(status);
+      return;
+    }
+
     const config = loadConfig();
-    if (!config.patched && !checkDependencies(true)) {
-      console.log(chalk.yellow('\n⚠ First time? Run the setup wizard:\n'));
+    if (!isCurrentDesktopAppPatched(config)) {
+      console.log(chalk.yellow('\n⚠ Not connected to Figma.\n'));
+      console.log(chalk.white('  Try:'));
+      console.log(chalk.cyan('  figma-ds-cli connect --safe') + chalk.gray(' (Safe Mode)'));
+      console.log(chalk.cyan('  figma-ds-cli connect') + chalk.gray(' (CDP / patched mode)'));
+      console.log(chalk.gray('\n  If this is the first run and FigCli is not installed yet:'));
       console.log(chalk.cyan('  figma-ds-cli init\n'));
       return;
     }
-    figmaUse('status');
+
+    console.log(chalk.yellow('\n⚠ Not connected to Figma.\n'));
+    console.log(chalk.white('  Try reconnecting with:'));
+    console.log(chalk.cyan('  figma-ds-cli connect --safe') + chalk.gray(' (Safe Mode)'));
+    console.log(chalk.cyan('  figma-ds-cli connect') + chalk.gray(' (CDP / patched mode)\n'));
   });
 
 // ============ UNPATCH ============
@@ -959,7 +1179,8 @@ program
   .command('unpatch')
   .description('Restore Figma to original state (removes remote debugging patch)')
   .action(() => {
-    const spinner = ora('Checking Figma patch status...').start();
+    const desktopAppLabel = getDesktopAppLabel();
+    const spinner = ora(`Checking ${desktopAppLabel} patch status...`).start();
 
     try {
       const patchStatus = isPatched();
@@ -979,10 +1200,10 @@ program
 
       // Update config
       const config = loadConfig();
-      config.patched = false;
+      setCurrentDesktopAppPatched(config, false);
       saveConfig(config);
 
-      spinner.succeed('Figma restored to original state');
+      spinner.succeed(`${desktopAppLabel} restored to original state`);
       console.log(chalk.gray('  Remote debugging is now blocked by default.'));
       console.log(chalk.gray('  Run "node src/index.js connect" to re-enable it.'));
     } catch (err) {
@@ -1002,6 +1223,7 @@ program
     console.log(chalk.hex('#4ECDC4')('  🎨 Happy vibe coding! ') + chalk.gray('— Sil · ') + chalk.hex('#FF6B35')('intodesignsystems.com\n'));
 
     const config = loadConfig();
+    const desktopAppLabel = getDesktopAppLabel();
 
     // Safe Mode: Plugin-based connection (no patching, no CDP)
     if (options.safe) {
@@ -1032,7 +1254,7 @@ program
       console.log(chalk.hex('#FF6B35')('  └─────────────────────────────────────────────────────┘\n'));
 
       console.log(chalk.white.bold('  ONE-TIME SETUP:\n'));
-      console.log(chalk.cyan('  1. ') + chalk.white('Open Figma Desktop and any design file'));
+      console.log(chalk.cyan('  1. ') + chalk.white(`Open ${desktopAppLabel} Desktop and any design file`));
       console.log(chalk.cyan('  2. ') + chalk.white('Go to ') + chalk.yellow('Plugins → Development → Import plugin from manifest'));
       console.log(chalk.cyan('  3. ') + chalk.white('Navigate to: ') + chalk.yellow(PLUGIN_MANIFEST_PATH));
       console.log(chalk.cyan('  4. ') + chalk.white('Click ') + chalk.yellow('Open') + chalk.white(' — plugin is now installed!\n'));
@@ -1071,19 +1293,19 @@ program
     console.log(chalk.hex('#FF6B35')('  🚀 Yolo Mode ') + chalk.gray('(direct CDP connection)\n'));
 
     // Patch Figma if needed
-    if (!config.patched) {
+    if (!isCurrentDesktopAppPatched(config)) {
       const patchSpinner = ora('Setting up Figma connection...').start();
       try {
         const patchStatus = isPatched();
         if (patchStatus === true) {
-          patchSpinner.succeed('Figma ready');
+          patchSpinner.succeed(`${desktopAppLabel} ready`);
         } else if (patchStatus === false) {
           patchFigma();
-          patchSpinner.succeed('Figma configured');
+          patchSpinner.succeed(`${desktopAppLabel} configured`);
         } else {
-          patchSpinner.succeed('Figma ready');
+          patchSpinner.succeed(`${desktopAppLabel} ready`);
         }
-        config.patched = true;
+        setCurrentDesktopAppPatched(config, true);
         saveConfig(config);
       } catch (err) {
         patchSpinner.fail('Setup failed');
@@ -1094,7 +1316,7 @@ program
           console.log(chalk.hex('#FF6B35')('  │') + chalk.white.bold('  One-time setup required                           ') + chalk.hex('#FF6B35')('│'));
           console.log(chalk.hex('#FF6B35')('  └─────────────────────────────────────────────────────┘\n'));
 
-          console.log(chalk.white('  Your Terminal needs permission to configure Figma.\n'));
+          console.log(chalk.white(`  Your Terminal needs permission to configure ${desktopAppLabel}.\n`));
 
           console.log(chalk.cyan('  Step 1: ') + chalk.white('Open ') + chalk.yellow('System Settings'));
           console.log(chalk.cyan('  Step 2: ') + chalk.white('Go to ') + chalk.yellow('Privacy & Security → Full Disk Access'));
@@ -1114,14 +1336,14 @@ program
     // Stop any existing daemon
     stopDaemon();
 
-    console.log(chalk.blue('Starting Figma...'));
+    console.log(chalk.blue(`Starting ${desktopAppLabel}...`));
     try {
       killFigma();
       await new Promise(r => setTimeout(r, 500));
     } catch { }
 
     startFigma();
-    console.log(chalk.green('✓ Figma started\n'));
+    console.log(chalk.green(`✓ ${desktopAppLabel} started\n`));
 
     // Wait and check connection
     const spinner = ora('Waiting for connection...').start();
@@ -1130,7 +1352,7 @@ program
       await new Promise(r => setTimeout(r, 1000));
       const result = figmaUse('status', { silent: true });
       if (result && result.includes('Connected')) {
-        spinner.succeed('Connected to Figma');
+        spinner.succeed(`Connected to ${desktopAppLabel}`);
         console.log(chalk.gray(result.trim()));
         connected = true;
         break;
@@ -1138,7 +1360,7 @@ program
     }
 
     if (!connected) {
-      spinner.warn('Open a file in Figma to connect');
+      spinner.warn(`Open a file in ${desktopAppLabel} to connect`);
       return;
     }
 
@@ -4571,6 +4793,325 @@ program
     await runEvalCommand(code, { silent: false });
   });
 
+// ============ ANNOTATIONS ============
+
+const annotations = program
+  .command('annotations')
+  .alias('ann')
+  .description('Manage Dev Mode annotations');
+
+annotations
+  .command('list-categories')
+  .description('List annotation categories in the current file')
+  .action(async () => {
+    await checkConnection();
+    const code = `(async () => {
+const categories = await figma.annotations.getAnnotationCategoriesAsync();
+return categories.map(category => ({
+  id: category.id,
+  label: category.label,
+  color: category.color,
+  isPreset: !!category.isPreset
+}));
+})()`;
+    await runEvalCommand(code, { silent: false });
+  });
+
+annotations
+  .command('add-category <label>')
+  .description('Create an annotation category if it does not already exist')
+  .option('-c, --color <color>', `Category color (${ANNOTATION_CATEGORY_COLORS.join(', ')})`, 'orange')
+  .action(async (label, options) => {
+    await checkConnection();
+    let color;
+    try {
+      color = normalizeAnnotationCategoryColor(options.color);
+    } catch (error) {
+      console.log(chalk.red('✗ ' + error.message));
+      return;
+    }
+
+    const code = `(async () => {
+const categories = await figma.annotations.getAnnotationCategoriesAsync();
+const existing = categories.find(category => category.label === ${JSON.stringify(label)});
+if (existing) {
+  return {
+    created: false,
+    category: {
+      id: existing.id,
+      label: existing.label,
+      color: existing.color,
+      isPreset: !!existing.isPreset
+    }
+  };
+}
+const category = await figma.annotations.addAnnotationCategoryAsync({
+  label: ${JSON.stringify(label)},
+  color: ${JSON.stringify(color)}
+});
+return {
+  created: true,
+  category: {
+    id: category.id,
+    label: category.label,
+    color: category.color,
+    isPreset: !!category.isPreset
+  }
+};
+})()`;
+    await runEvalCommand(code, { silent: false });
+  });
+
+annotations
+  .command('get [nodeId]')
+  .description('Get annotations for a node or the current single selection')
+  .action(async (nodeId) => {
+    await checkConnection();
+    const code = `(async () => {
+async function resolveNode() {
+  const nodeId = ${JSON.stringify(nodeId || null)};
+  if (nodeId) {
+    const node = await figma.getNodeByIdAsync(nodeId);
+    if (!node) throw new Error('Node not found: ' + nodeId);
+    return node;
+  }
+
+  const selection = figma.currentPage.selection;
+  if (selection.length === 0) throw new Error('No selection. Pass a nodeId or select a node.');
+  if (selection.length > 1) throw new Error('Multiple nodes selected. Pass a nodeId or select exactly one node.');
+  return selection[0];
+}
+
+const node = await resolveNode();
+if (!('annotations' in node)) {
+  throw new Error('Node type ' + node.type + ' does not support annotations');
+}
+
+const categories = await figma.annotations.getAnnotationCategoriesAsync();
+const categoryById = Object.fromEntries(categories.map(category => [category.id, {
+  id: category.id,
+  label: category.label,
+  color: category.color,
+  isPreset: !!category.isPreset
+}]));
+
+return {
+  nodeId: node.id,
+  nodeName: node.name || '',
+  nodeType: node.type,
+  annotations: (node.annotations || []).map((annotation, index) => ({
+    index,
+    label: annotation.label,
+    labelMarkdown: annotation.labelMarkdown,
+    categoryId: annotation.categoryId || null,
+    category: annotation.categoryId ? (categoryById[annotation.categoryId] || null) : null,
+    properties: annotation.properties || []
+  }))
+};
+})()`;
+    await runEvalCommand(code, { silent: false });
+  });
+
+annotations
+  .command('set <label>')
+  .description('Add or update an annotation on a node or the current single selection')
+  .option('-n, --node <id>', 'Node ID (uses current single selection if omitted)')
+  .option('-c, --category <label>', 'Category label to apply')
+  .option('--category-id <id>', 'Category ID to apply')
+  .option('--create-category', 'Create the category when --category does not exist')
+  .option('--category-color <color>', `Color used with --create-category (${ANNOTATION_CATEGORY_COLORS.join(', ')})`, 'orange')
+  .option('-p, --properties <list>', 'Comma-separated pinned properties, e.g. width,height,fills')
+  .option('--replace', 'Replace all annotations on the node instead of upserting/appending')
+  .action(async (label, options) => {
+    await checkConnection();
+
+    let categoryColor;
+    try {
+      categoryColor = normalizeAnnotationCategoryColor(options.categoryColor);
+    } catch (error) {
+      console.log(chalk.red('✗ ' + error.message));
+      return;
+    }
+
+    const properties = parseAnnotationProperties(options.properties);
+
+    const code = `(async () => {
+async function resolveNode() {
+  const nodeId = ${JSON.stringify(options.node || null)};
+  if (nodeId) {
+    const node = await figma.getNodeByIdAsync(nodeId);
+    if (!node) throw new Error('Node not found: ' + nodeId);
+    return node;
+  }
+
+  const selection = figma.currentPage.selection;
+  if (selection.length === 0) throw new Error('No selection. Pass --node or select a node.');
+  if (selection.length > 1) throw new Error('Multiple nodes selected. Pass --node or select exactly one node.');
+  return selection[0];
+}
+
+const node = await resolveNode();
+if (!('annotations' in node)) {
+  throw new Error('Node type ' + node.type + ' does not support annotations');
+}
+
+const categories = await figma.annotations.getAnnotationCategoriesAsync();
+let category = null;
+
+if (${JSON.stringify(options.categoryId || null)}) {
+  category = await figma.annotations.getAnnotationCategoryByIdAsync(${JSON.stringify(options.categoryId || null)});
+  if (!category) throw new Error('Annotation category not found: ' + ${JSON.stringify(options.categoryId || null)});
+} else if (${JSON.stringify(options.category || null)}) {
+  category = categories.find(item => item.label === ${JSON.stringify(options.category || null)}) || null;
+  if (!category && ${options.createCategory ? 'true' : 'false'}) {
+    category = await figma.annotations.addAnnotationCategoryAsync({
+      label: ${JSON.stringify(options.category || null)},
+      color: ${JSON.stringify(categoryColor)}
+    });
+  }
+  if (!category) {
+    throw new Error('Annotation category not found: ' + ${JSON.stringify(options.category || null)});
+  }
+}
+
+const categoryById = Object.fromEntries(categories.map(item => [item.id, {
+  id: item.id,
+  label: item.label,
+  color: item.color,
+  isPreset: !!item.isPreset
+}]));
+
+if (category) {
+  categoryById[category.id] = {
+    id: category.id,
+    label: category.label,
+    color: category.color,
+    isPreset: !!category.isPreset
+  };
+}
+
+const nextAnnotation = {
+  label: ${JSON.stringify(label)}
+};
+
+if (category) nextAnnotation.categoryId = category.id;
+if (${properties.length} > 0) nextAnnotation.properties = ${JSON.stringify(properties)}.map(type => ({ type }));
+
+function toWritableAnnotation(annotation) {
+  const writable = {};
+  if (annotation.label) writable.label = annotation.label;
+  else if (annotation.labelMarkdown) writable.label = annotation.labelMarkdown;
+  if (annotation.categoryId) writable.categoryId = annotation.categoryId;
+  if (Array.isArray(annotation.properties) && annotation.properties.length > 0) {
+    writable.properties = annotation.properties.map(property => ({ ...property }));
+  }
+  return writable;
+}
+
+let annotations = Array.isArray(node.annotations) ? node.annotations.map(toWritableAnnotation) : [];
+
+if (${options.replace ? 'true' : 'false'}) {
+  annotations = [nextAnnotation];
+} else if (category) {
+  const index = annotations.findIndex(annotation => annotation.categoryId === category.id);
+  if (index >= 0) {
+    annotations[index] = { ...annotations[index], ...nextAnnotation };
+  } else {
+    annotations.push(nextAnnotation);
+  }
+} else {
+  const index = annotations.findIndex(annotation => annotation.label === nextAnnotation.label && !annotation.categoryId);
+  if (index >= 0) {
+    annotations[index] = { ...annotations[index], ...nextAnnotation };
+  } else {
+    annotations.push(nextAnnotation);
+  }
+}
+
+node.annotations = annotations;
+
+return {
+  nodeId: node.id,
+  nodeName: node.name || '',
+  nodeType: node.type,
+  annotations: (node.annotations || []).map((annotation, index) => ({
+    index,
+    label: annotation.label,
+    labelMarkdown: annotation.labelMarkdown,
+    categoryId: annotation.categoryId || null,
+    category: annotation.categoryId ? (categoryById[annotation.categoryId] || null) : null,
+    properties: annotation.properties || []
+  }))
+};
+})()`;
+    await runEvalCommand(code, { silent: false });
+  });
+
+annotations
+  .command('clear [nodeId]')
+  .description('Clear annotations from a node or the current single selection')
+  .option('-c, --category <label>', 'Only remove annotations for this category label')
+  .option('--category-id <id>', 'Only remove annotations for this category ID')
+  .action(async (nodeId, options) => {
+    await checkConnection();
+    const code = `(async () => {
+async function resolveNode() {
+  const nodeId = ${JSON.stringify(nodeId || null)};
+  if (nodeId) {
+    const node = await figma.getNodeByIdAsync(nodeId);
+    if (!node) throw new Error('Node not found: ' + nodeId);
+    return node;
+  }
+
+  const selection = figma.currentPage.selection;
+  if (selection.length === 0) throw new Error('No selection. Pass a nodeId or select a node.');
+  if (selection.length > 1) throw new Error('Multiple nodes selected. Pass a nodeId or select exactly one node.');
+  return selection[0];
+}
+
+const node = await resolveNode();
+if (!('annotations' in node)) {
+  throw new Error('Node type ' + node.type + ' does not support annotations');
+}
+
+function toWritableAnnotation(annotation) {
+  const writable = {};
+  if (annotation.label) writable.label = annotation.label;
+  else if (annotation.labelMarkdown) writable.label = annotation.labelMarkdown;
+  if (annotation.categoryId) writable.categoryId = annotation.categoryId;
+  if (Array.isArray(annotation.properties) && annotation.properties.length > 0) {
+    writable.properties = annotation.properties.map(property => ({ ...property }));
+  }
+  return writable;
+}
+
+const before = Array.isArray(node.annotations) ? node.annotations.map(toWritableAnnotation) : [];
+let next = [];
+
+if (${JSON.stringify(options.categoryId || null)}) {
+  next = before.filter(annotation => annotation.categoryId !== ${JSON.stringify(options.categoryId || null)});
+} else if (${JSON.stringify(options.category || null)}) {
+  const categories = await figma.annotations.getAnnotationCategoriesAsync();
+  const category = categories.find(item => item.label === ${JSON.stringify(options.category || null)});
+  if (!category) throw new Error('Annotation category not found: ' + ${JSON.stringify(options.category || null)});
+  next = before.filter(annotation => annotation.categoryId !== category.id);
+} else {
+  next = [];
+}
+
+node.annotations = next;
+
+return {
+  nodeId: node.id,
+  nodeName: node.name || '',
+  nodeType: node.type,
+  removed: before.length - next.length,
+  annotations: node.annotations || []
+};
+})()`;
+    await runEvalCommand(code, { silent: false });
+  });
+
 // ============ RENDER ============
 
 // Helper: Get next free X position for smart positioning (horizontal)
@@ -4925,6 +5466,8 @@ program
   .description('Check system compatibility and connection status')
   .action(async () => {
     console.log(chalk.cyan('\n🔍 Figma CLI Diagnostics\n'));
+    const desktopAppLabel = getDesktopAppLabel();
+    const desktopProcessName = getDesktopAppProcessName();
 
     // 1. Node version
     const nodeVersion = process.version;
@@ -4939,43 +5482,46 @@ program
     const platform = process.platform;
     const platformNames = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
     console.log(chalk.gray(`  Platform: ${platformNames[platform] || platform}`));
+    console.log(chalk.gray(`  Desktop app: ${desktopAppLabel}`));
 
     // 3. Figma version
     try {
       let figmaVersion = 'unknown';
       if (platform === 'darwin') {
-        figmaVersion = execSync('defaults read /Applications/Figma.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null', { encoding: 'utf8' }).trim();
+        const plistPath = getDesktopAppVersionPlistPath();
+        figmaVersion = execSync(`defaults read ${JSON.stringify(plistPath)} CFBundleShortVersionString 2>/dev/null`, { encoding: 'utf8' }).trim();
       } else if (platform === 'win32') {
-        // Windows: check registry or file version
-        figmaVersion = execSync('powershell -command "(Get-Item \\"$env:LOCALAPPDATA\\Figma\\Figma.exe\\").VersionInfo.ProductVersion" 2>nul', { encoding: 'utf8' }).trim() || 'unknown';
+        const figmaPath = getFigmaBinaryPath();
+        const winPath = (figmaPath || '').replace(/'/g, "''");
+        figmaVersion = execSync(`powershell -command "(Get-Item '${winPath}').VersionInfo.ProductVersion" 2>nul`, { encoding: 'utf8' }).trim() || 'unknown';
       }
       const major = parseInt(figmaVersion.split('.')[0]);
       if (major >= 126) {
-        console.log(chalk.yellow(`⚠ Figma ${figmaVersion} (126+ blocks remote debugging by default)`));
+        console.log(chalk.yellow(`⚠ ${desktopAppLabel} ${figmaVersion} (126+ blocks remote debugging by default)`));
       } else {
-        console.log(chalk.green(`✓ Figma ${figmaVersion}`));
+        console.log(chalk.green(`✓ ${desktopAppLabel} ${figmaVersion}`));
       }
     } catch {
-      console.log(chalk.red('✗ Figma not found'));
+      console.log(chalk.red(`✗ ${desktopAppLabel} not found`));
     }
 
     // 4. Figma running?
     try {
       let figmaRunning = false;
       if (platform === 'darwin' || platform === 'linux') {
-        const ps = execSync('pgrep -f Figma 2>/dev/null || true', { encoding: 'utf8' });
+        const ps = execSync(`pgrep -x ${JSON.stringify(desktopProcessName)} 2>/dev/null || true`, { encoding: 'utf8' });
         figmaRunning = ps.trim().length > 0;
       } else if (platform === 'win32') {
-        const ps = execSync('tasklist /FI "IMAGENAME eq Figma.exe" 2>nul', { encoding: 'utf8' });
-        figmaRunning = ps.includes('Figma.exe');
+        const ps = execSync(`tasklist /FI "IMAGENAME eq ${desktopProcessName}" 2>nul`, { encoding: 'utf8' });
+        figmaRunning = ps.includes(desktopProcessName);
       }
       if (figmaRunning) {
-        console.log(chalk.green('✓ Figma is running'));
+        console.log(chalk.green(`✓ ${desktopAppLabel} is running`));
       } else {
-        console.log(chalk.red('✗ Figma is not running'));
+        console.log(chalk.red(`✗ ${desktopAppLabel} is not running`));
       }
     } catch {
-      console.log(chalk.gray('  Could not check if Figma is running'));
+      console.log(chalk.gray(`  Could not check if ${desktopAppLabel} is running`));
     }
 
     // 5. Remote debugging port
@@ -4992,7 +5538,7 @@ program
     }
 
     // 6. Daemon status
-    if (isDaemonRunning()) {
+    if (canUseDaemon()) {
       console.log(chalk.green('✓ Daemon running on port 3456'));
     } else {
       console.log(chalk.yellow('○ Daemon not running (optional, speeds up commands)'));
@@ -5012,9 +5558,9 @@ program
     // 8. Connection test
     console.log(chalk.gray('\n  Testing connection...'));
     try {
-      const client = await getFigmaClient();
-      const result = await client.eval('({ file: figma.root.name, page: figma.currentPage.name })');
-      console.log(chalk.green(`✓ Connected to "${result.file}" / "${result.page}"`));
+      const result = await fastEval('({ file: figma.root.name, page: figma.currentPage.name })');
+      const mode = await isInSafeMode() ? 'Safe Mode' : 'CDP';
+      console.log(chalk.green(`✓ Connected to "${result.file}" / "${result.page}" via ${mode}`));
     } catch (e) {
       console.log(chalk.red('✗ Connection failed: ' + e.message));
     }
@@ -5058,9 +5604,10 @@ return {
       process.exit(1);
     }
     const buffer = Buffer.from(result.bytes);
-    const outputFile = options.output === 'screenshot.png' && format !== 'PNG'
+    const rawFile = options.output === 'screenshot.png' && format !== 'PNG'
       ? `screenshot.${format.toLowerCase()}`
       : options.output;
+    const outputFile = resolveOutputPath(rawFile);
     writeFileSync(outputFile, buffer);
     console.log(chalk.green('✓'), `Screenshot: ${result.name} (${result.width}x${result.height}) → ${outputFile}`);
   });
@@ -5094,9 +5641,10 @@ return {
       process.exit(1);
     }
     const buffer = Buffer.from(result.bytes);
-    const outputFile = options.output === 'node-export.png' && format !== 'PNG'
+    const rawFile = options.output === 'node-export.png' && format !== 'PNG'
       ? `node-export.${format.toLowerCase()}`
       : options.output;
+    const outputFile = resolveOutputPath(rawFile);
     writeFileSync(outputFile, buffer);
     console.log(chalk.green('✓'), `Exported ${result.name} (${result.width}x${result.height}) to ${outputFile}`);
   });
@@ -5160,11 +5708,12 @@ program
 
     // If --file option provided, read code from file
     if (options.file) {
-      if (!existsSync(options.file)) {
+      const resolvedFile = resolveScriptPath(options.file);
+      if (!existsSync(resolvedFile)) {
         console.log(chalk.red('✗ File not found: ' + options.file));
         return;
       }
-      jsCode = readFileSync(options.file, 'utf8');
+      jsCode = readFileSync(resolvedFile, 'utf8');
     }
 
     if (!jsCode) {
@@ -5215,11 +5764,12 @@ program
   .description('Run JavaScript file in Figma (alias for eval --file)')
   .action(async (file) => {
     checkConnection();
-    if (!existsSync(file)) {
+    const resolvedFile = resolveScriptPath(file);
+    if (!existsSync(resolvedFile)) {
       console.log(chalk.red('✗ File not found: ' + file));
       return;
     }
-    const code = readFileSync(file, 'utf8');
+    const code = readFileSync(resolvedFile, 'utf8');
     try {
       // Use async daemon path for better performance with long scripts
       if (isDaemonRunning()) {
@@ -6617,6 +7167,24 @@ program
   .description('List open Figma design files as JSON')
   .action(async () => {
     try {
+      const health = getDaemonHealthSync();
+      if (health?.plugin && !health?.cdp) {
+        const currentFile = await fastEval(`(() => {
+          const editorType = figma.editorType || 'figma';
+          const fileKey = figma.fileKey || figma.root.id || 'current-file';
+          const route = editorType === 'figjam' ? 'board' : 'design';
+          return {
+            title: figma.root.name,
+            id: fileKey,
+            url: figma.fileKey ? 'https://www.figma.com/' + route + '/' + figma.fileKey : null,
+            wsUrl: null,
+            mode: 'safe'
+          };
+        })()`);
+        console.log(JSON.stringify([currentFile]));
+        return;
+      }
+
       const pages = await FigmaClient.listPages();
       // Filter to actual design/board files only (exclude blobs, webpack, feed, tabs)
       const designFiles = pages.filter(p =>
@@ -7054,6 +7622,128 @@ program
     } catch (error) {
       spinner.fail('Failed: ' + error.message);
     }
+  });
+
+// ── Project management ──
+
+const projectCmd = program
+  .command('project')
+  .description('Manage per-file project directories');
+
+projectCmd
+  .command('resolve')
+  .description('Resolve or create project directory for a Figma file')
+  .requiredOption('--title <title>', 'Figma file title')
+  .option('--file-key <key>', 'Figma file key')
+  .option('--url <url>', 'Figma file URL')
+  .action((options) => {
+    const dir = createOrGetProjectDir(options.title, options.fileKey, options.url);
+    process.stdout.write(dir);
+  });
+
+projectCmd
+  .command('list')
+  .description('List all project directories')
+  .action(() => {
+    if (!existsSync(PROJECTS_DIR)) {
+      console.log(chalk.gray('No projects yet.'));
+      return;
+    }
+    const entries = readdirSync(PROJECTS_DIR, { withFileTypes: true });
+    let found = false;
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = join(PROJECTS_DIR, entry.name, 'project.json');
+      if (!existsSync(manifestPath)) continue;
+      try {
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+        found = true;
+        console.log(chalk.bold(manifest.title) + chalk.gray(` (${entry.name})`));
+        if (manifest.url) console.log(chalk.gray(`  ${manifest.url}`));
+        console.log(chalk.gray(`  Created: ${manifest.createdAt}`));
+      } catch {}
+    }
+    if (!found) console.log(chalk.gray('No projects yet.'));
+  });
+
+projectCmd
+  .command('info')
+  .description('Show current project info')
+  .action(() => {
+    const dir = getProjectDir();
+    if (!dir) {
+      console.log(chalk.gray('No project context. Run fig-start to select a file.'));
+      return;
+    }
+    const manifestPath = join(dir, 'project.json');
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      console.log(chalk.bold('Project: ') + manifest.title);
+      console.log(chalk.gray('Directory: ') + dir);
+      if (manifest.url) console.log(chalk.gray('URL: ') + manifest.url);
+      console.log(chalk.gray('Created: ') + manifest.createdAt);
+    } else {
+      console.log(chalk.yellow('Project directory exists but has no manifest: ') + dir);
+    }
+  });
+
+// ── Skills management ──
+
+const skillsCmd = program
+  .command('skills')
+  .description('Manage skills (instructions and scripts for AI agents)');
+
+skillsCmd
+  .command('list')
+  .description('List all available skills (global + project)')
+  .action(() => {
+    console.log(chalk.bold('Global skills:'));
+    if (existsSync(GLOBAL_SKILLS_DIR)) {
+      const files = readdirSync(GLOBAL_SKILLS_DIR).filter(f => f.endsWith('.md') || f.endsWith('.js'));
+      if (files.length) {
+        files.forEach(f => console.log('  ' + f));
+      } else {
+        console.log(chalk.gray('  (none)'));
+      }
+    } else {
+      console.log(chalk.gray('  (none) — create files in ~/.figma-cli/skills/'));
+    }
+
+    const projectDir = getProjectDir();
+    if (projectDir) {
+      const projectSkillsDir = join(projectDir, 'skills');
+      console.log(chalk.bold('\nProject skills:'));
+      if (existsSync(projectSkillsDir)) {
+        const files = readdirSync(projectSkillsDir).filter(f => f.endsWith('.md') || f.endsWith('.js'));
+        if (files.length) {
+          files.forEach(f => console.log('  ' + f));
+        } else {
+          console.log(chalk.gray('  (none)'));
+        }
+      } else {
+        console.log(chalk.gray('  (none)'));
+      }
+    }
+  });
+
+skillsCmd
+  .command('show <name>')
+  .description('Show a skill file content')
+  .action((name) => {
+    const filename = name.endsWith('.md') || name.endsWith('.js') ? name : name + '.md';
+    const searchPaths = [];
+    const projectDir = getProjectDir();
+    if (projectDir) searchPaths.push(join(projectDir, 'skills'));
+    searchPaths.push(GLOBAL_SKILLS_DIR);
+
+    for (const dir of searchPaths) {
+      const filePath = join(dir, filename);
+      if (existsSync(filePath)) {
+        console.log(readFileSync(filePath, 'utf8'));
+        return;
+      }
+    }
+    console.log(chalk.red('Skill not found: ' + name));
   });
 
 program.parse();
