@@ -8,12 +8,28 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const figStart = readFileSync(resolve(repoRoot, 'bin/fig-start'), 'utf8');
 
 describe('fig-start agent picker', () => {
-  it('includes Gemini in the launcher menu', () => {
+  it('includes all agents in the launcher menu', () => {
+    assert.match(figStart, /1\) Claude Code \(claude\)/);
+    assert.match(figStart, /2\) Codex \(codex\)/);
     assert.match(figStart, /3\) Gemini \(gemini\)/);
-    assert.match(figStart, /Enter choice \[1\/2\/3, default: 1\]/);
+    assert.match(figStart, /4\) Crush \(crush\)/);
+    assert.match(figStart, /5\) OpenCode \(opencode\)/);
+    assert.match(figStart, /Enter choice \[1-5, default: 1\]/);
   });
 
   it('launches Gemini with the repo context prompt', () => {
     assert.match(figStart, /exec gemini --approval-mode yolo -i "\$AGENT_CONTEXT"/);
+  });
+
+  it('launches Crush with yolo flag', () => {
+    assert.match(figStart, /exec crush --yolo/);
+  });
+
+  it('launches OpenCode', () => {
+    assert.match(figStart, /exec opencode/);
+  });
+
+  it('exports FIGMA_SAFE_MODE for env-based agents', () => {
+    assert.match(figStart, /export FIGMA_SAFE_MODE="\$SAFE_MODE"/);
   });
 });

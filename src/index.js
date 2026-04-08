@@ -7746,4 +7746,1092 @@ skillsCmd
     console.log(chalk.red('Skill not found: ' + name));
   });
 
+// ============ STYLES ============
+
+const style = program.command('style').description('Manage Figma styles');
+
+style
+  .command('list')
+  .description('List all local styles (paint, text, effect, grid)')
+  .option('-t, --type <type>', 'Filter by type: paint, text, effect, grid')
+  .action(async (options) => {
+    checkConnection();
+    const spinner = ora('Fetching styles...').start();
+    try {
+      const filterType = options.type || 'all';
+      const code = `(async () => {
+        const results = [];
+        const types = '${filterType}';
+
+        if (types === 'all' || types === 'paint') {
+          const paints = await figma.getLocalPaintStylesAsync();
+          for (const s of paints) {
+            results.push({ id: s.id, name: s.name, type: 'PAINT', description: s.description || '' });
+          }
+        }
+        if (types === 'all' || types === 'text') {
+          const texts = await figma.getLocalTextStylesAsync();
+          for (const s of texts) {
+            results.push({ id: s.id, name: s.name, type: 'TEXT', fontSize: s.fontSize, fontName: s.fontName, description: s.description || '' });
+          }
+        }
+        if (types === 'all' || types === 'effect') {
+          const effects = await figma.getLocalEffectStylesAsync();
+          for (const s of effects) {
+            results.push({ id: s.id, name: s.name, type: 'EFFECT', description: s.description || '' });
+          }
+        }
+        if (types === 'all' || types === 'grid') {
+          const grids = await figma.getLocalGridStylesAsync();
+          for (const s of grids) {
+            results.push({ id: s.id, name: s.name, type: 'GRID', description: s.description || '' });
+          }
+        }
+
+        return JSON.stringify(results);
+      })()`;
+      const raw = await fastEval(code);
+      const styles = JSON.parse(raw);
+      spinner.succeed(`Found ${styles.length} style(s)`);
+
+      if (styles.length === 0) {
+        console.log(chalk.dim('  No styles found.'));
+        return;
+      }
+
+      const grouped = {};
+      for (const s of styles) {
+        if (!grouped[s.type]) grouped[s.type] = [];
+        grouped[s.type].push(s);
+      }
+
+      for (const [type, items] of Object.entries(grouped)) {
+        console.log(chalk.bold.cyan(`\n  ${type} (${items.length})`));
+        for (const s of items) {
+          let detail = '';
+          if (s.type === 'TEXT' && s.fontName) {
+            detail = chalk.dim(` — ${s.fontName.family} ${s.fontName.style} ${s.fontSize}px`);
+          }
+          if (s.description) {
+            detail += chalk.dim(` "${s.description}"`);
+          }
+          console.log(`    ${chalk.white(s.name)} ${chalk.dim(s.id)}${detail}`);
+        }
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('create-paint <name>')
+  .description('Create a paint style with a solid color')
+  .option('--color <hex>', 'Color in hex format', '#000000')
+  .option('--description <text>', 'Style description')
+  .action(async (name, options) => {
+    checkConnection();
+    const spinner = ora(`Creating paint style "${name}"...`).start();
+    try {
+      const hex = options.color.replace('#', '');
+      const desc = options.description || '';
+      const code = `(async () => {
+        function hexToRgb(hex) {
+          hex = hex.replace('#', '');
+          return {
+            r: parseInt(hex.substr(0, 2), 16) / 255,
+            g: parseInt(hex.substr(2, 2), 16) / 255,
+            b: parseInt(hex.substr(4, 2), 16) / 255
+          };
+        }
+        const style = figma.createPaintStyle();
+        style.name = ${JSON.stringify(name)};
+        if (${JSON.stringify(desc)}) style.description = ${JSON.stringify(desc)};
+        const color = hexToRgb('${hex}');
+        style.paints = [{ type: 'SOLID', color: color }];
+        return JSON.stringify({ id: style.id, name: style.name });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      spinner.succeed(`Created paint style "${result.name}" ${chalk.dim(result.id)}`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('create-text <name>')
+  .description('Create a text style')
+  .option('--size <n>', 'Font size', '16')
+  .option('--weight <w>', 'Font weight/style', 'Regular')
+  .option('--font <f>', 'Font family', 'Inter')
+  .option('--description <text>', 'Style description')
+  .action(async (name, options) => {
+    checkConnection();
+    const spinner = ora(`Creating text style "${name}"...`).start();
+    try {
+      const size = parseFloat(options.size);
+      const weight = options.weight;
+      const font = options.font;
+      const desc = options.description || '';
+      const code = `(async () => {
+        const fontName = { family: ${JSON.stringify(font)}, style: ${JSON.stringify(weight)} };
+        await figma.loadFontAsync(fontName);
+        const style = figma.createTextStyle();
+        style.name = ${JSON.stringify(name)};
+        if (${JSON.stringify(desc)}) style.description = ${JSON.stringify(desc)};
+        style.fontName = fontName;
+        style.fontSize = ${size};
+        return JSON.stringify({ id: style.id, name: style.name, fontSize: style.fontSize, fontName: style.fontName });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      spinner.succeed(`Created text style "${result.name}" — ${result.fontName.family} ${result.fontName.style} ${result.fontSize}px ${chalk.dim(result.id)}`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('create-effect <name>')
+  .description('Create an effect style (drop shadow)')
+  .option('--blur <n>', 'Blur radius', '4')
+  .option('--x <n>', 'X offset', '0')
+  .option('--y <n>', 'Y offset', '4')
+  .option('--color <hex>', 'Shadow color', '#000000')
+  .option('--opacity <n>', 'Shadow opacity 0-1', '0.25')
+  .option('--description <text>', 'Style description')
+  .action(async (name, options) => {
+    checkConnection();
+    const spinner = ora(`Creating effect style "${name}"...`).start();
+    try {
+      const blur = parseFloat(options.blur);
+      const x = parseFloat(options.x);
+      const y = parseFloat(options.y);
+      const hex = options.color.replace('#', '');
+      const opacity = parseFloat(options.opacity);
+      const desc = options.description || '';
+      const code = `(async () => {
+        function hexToRgb(hex) {
+          hex = hex.replace('#', '');
+          return {
+            r: parseInt(hex.substr(0, 2), 16) / 255,
+            g: parseInt(hex.substr(2, 2), 16) / 255,
+            b: parseInt(hex.substr(4, 2), 16) / 255
+          };
+        }
+        const style = figma.createEffectStyle();
+        style.name = ${JSON.stringify(name)};
+        if (${JSON.stringify(desc)}) style.description = ${JSON.stringify(desc)};
+        const color = hexToRgb('${hex}');
+        style.effects = [{
+          type: 'DROP_SHADOW',
+          visible: true,
+          radius: ${blur},
+          offset: { x: ${x}, y: ${y} },
+          color: { ...color, a: ${opacity} },
+          blendMode: 'NORMAL',
+          spread: 0
+        }];
+        return JSON.stringify({ id: style.id, name: style.name });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      spinner.succeed(`Created effect style "${result.name}" ${chalk.dim(result.id)}`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('apply <styleId>')
+  .description('Apply a style to the current selection')
+  .action(async (styleId) => {
+    checkConnection();
+    const spinner = ora('Applying style...').start();
+    try {
+      const code = `(async () => {
+        const sel = figma.currentPage.selection;
+        if (sel.length === 0) return JSON.stringify({ error: 'No selection' });
+
+        const style = await figma.getStyleByIdAsync('${styleId}');
+        if (!style) return JSON.stringify({ error: 'Style not found: ${styleId}' });
+
+        const type = style.type;
+        let applied = 0;
+
+        for (const node of sel) {
+          try {
+            if (type === 'PAINT') {
+              if ('fillStyleId' in node) { node.fillStyleId = style.id; applied++; }
+            } else if (type === 'TEXT') {
+              if (node.type === 'TEXT') { node.textStyleId = style.id; applied++; }
+            } else if (type === 'EFFECT') {
+              if ('effectStyleId' in node) { node.effectStyleId = style.id; applied++; }
+            } else if (type === 'GRID') {
+              if ('gridStyleId' in node) { node.gridStyleId = style.id; applied++; }
+            }
+          } catch (e) { /* skip incompatible nodes */ }
+        }
+
+        return JSON.stringify({ type, styleName: style.name, applied, total: sel.length });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      if (result.error) { spinner.fail(result.error); return; }
+      spinner.succeed(`Applied ${result.type} style "${result.styleName}" to ${result.applied}/${result.total} node(s)`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('delete <styleId>')
+  .description('Delete a style by ID')
+  .action(async (styleId) => {
+    checkConnection();
+    const spinner = ora('Deleting style...').start();
+    try {
+      const code = `(async () => {
+        const style = await figma.getStyleByIdAsync('${styleId}');
+        if (!style) return JSON.stringify({ error: 'Style not found: ${styleId}' });
+        const name = style.name;
+        const type = style.type;
+        style.remove();
+        return JSON.stringify({ name, type });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      if (result.error) { spinner.fail(result.error); return; }
+      spinner.succeed(`Deleted ${result.type} style "${result.name}"`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+// ============ UNDO ============
+
+const undo = program
+  .command('undo')
+  .description('Undo/redo and version history');
+
+undo
+  .action(async () => {
+    await checkConnection();
+    try {
+      await fastEval(`(() => { figma.triggerUndo(); return 'ok'; })()`);
+      console.log(chalk.green('✓ Undo triggered'));
+    } catch (e) {
+      console.log(chalk.red('✗ Undo failed: ' + e.message));
+    }
+  });
+
+undo
+  .command('commit')
+  .description('Commit current state to undo history (checkpoint)')
+  .action(async () => {
+    await checkConnection();
+    try {
+      await fastEval(`(() => { figma.commitUndo(); return 'ok'; })()`);
+      console.log(chalk.green('✓ Undo checkpoint committed'));
+    } catch (e) {
+      console.log(chalk.red('✗ Commit failed: ' + e.message));
+    }
+  });
+
+undo
+  .command('save <title>')
+  .description('Save a version to file history')
+  .option('-d, --description <text>', 'Version description')
+  .action(async (title, options) => {
+    await checkConnection();
+    const spinner = ora('Saving version...').start();
+    const desc = options.description || '';
+    const code = `(async () => {
+      const result = await figma.saveVersionHistoryAsync(${JSON.stringify(title)}, ${JSON.stringify(desc)});
+      return { id: result.id };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      spinner.succeed(`Version saved: "${title}"`);
+      console.log(chalk.gray(`  Version ID: ${result.id}`));
+    } catch (e) {
+      spinner.fail('Save version failed: ' + e.message);
+    }
+  });
+
+// ============ BOOLEAN OPS ============
+
+const bool = program
+  .command('bool')
+  .description('Boolean operations on selected nodes (union, subtract, intersect, exclude)');
+
+bool
+  .command('union')
+  .description('Union selected nodes')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Performing union...').start();
+    const code = `(async () => {
+      const sel = figma.currentPage.selection;
+      if (sel.length < 2) return { error: 'Select at least 2 nodes' };
+      const parent = sel[0].parent;
+      const result = figma.union(sel, parent);
+      figma.currentPage.selection = [result];
+      return { id: result.id, name: result.name };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Union created: ${result.name} (${result.id})`);
+      }
+    } catch (e) {
+      spinner.fail('Union failed: ' + e.message);
+    }
+  });
+
+bool
+  .command('subtract')
+  .description('Subtract selected nodes (first minus rest)')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Performing subtract...').start();
+    const code = `(async () => {
+      const sel = figma.currentPage.selection;
+      if (sel.length < 2) return { error: 'Select at least 2 nodes' };
+      const parent = sel[0].parent;
+      const result = figma.subtract(sel, parent);
+      figma.currentPage.selection = [result];
+      return { id: result.id, name: result.name };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Subtract created: ${result.name} (${result.id})`);
+      }
+    } catch (e) {
+      spinner.fail('Subtract failed: ' + e.message);
+    }
+  });
+
+bool
+  .command('intersect')
+  .description('Intersect selected nodes')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Performing intersect...').start();
+    const code = `(async () => {
+      const sel = figma.currentPage.selection;
+      if (sel.length < 2) return { error: 'Select at least 2 nodes' };
+      const parent = sel[0].parent;
+      const result = figma.intersect(sel, parent);
+      figma.currentPage.selection = [result];
+      return { id: result.id, name: result.name };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Intersect created: ${result.name} (${result.id})`);
+      }
+    } catch (e) {
+      spinner.fail('Intersect failed: ' + e.message);
+    }
+  });
+
+bool
+  .command('exclude')
+  .description('Exclude selected nodes')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Performing exclude...').start();
+    const code = `(async () => {
+      const sel = figma.currentPage.selection;
+      if (sel.length < 2) return { error: 'Select at least 2 nodes' };
+      const parent = sel[0].parent;
+      const result = figma.exclude(sel, parent);
+      figma.currentPage.selection = [result];
+      return { id: result.id, name: result.name };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Exclude created: ${result.name} (${result.id})`);
+      }
+    } catch (e) {
+      spinner.fail('Exclude failed: ' + e.message);
+    }
+  });
+
+// ============ SECTIONS ============
+
+const section = program
+  .command('section')
+  .description('Section operations (create, list)');
+
+section
+  .command('create <name>')
+  .description('Create a section on canvas')
+  .option('-x, --x <n>', 'X position', '0')
+  .option('-y, --y <n>', 'Y position', '0')
+  .option('-w, --w <n>', 'Width', '500')
+  .option('-h, --h <n>', 'Height', '500')
+  .option('-c, --color <hex>', 'Section fill color')
+  .action(async (name, options) => {
+    await checkConnection();
+    const spinner = ora(`Creating section "${name}"...`).start();
+    const x = parseInt(options.x) || 0;
+    const y = parseInt(options.y) || 0;
+    const w = parseInt(options.w) || 500;
+    const h = parseInt(options.h) || 500;
+    const colorCode = options.color ? `
+      const hex = ${JSON.stringify(options.color)}.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16) / 255;
+      const g = parseInt(hex.substring(2, 4), 16) / 255;
+      const b = parseInt(hex.substring(4, 6), 16) / 255;
+      section.fills = [{ type: 'SOLID', color: { r, g, b } }];
+    ` : '';
+    const code = `(async () => {
+      const section = figma.createSection();
+      section.name = ${JSON.stringify(name)};
+      section.x = ${x};
+      section.y = ${y};
+      section.resize(${w}, ${h});
+      ${colorCode}
+      figma.currentPage.selection = [section];
+      figma.viewport.scrollAndZoomIntoView([section]);
+      return { id: section.id, name: section.name, x: section.x, y: section.y, w: ${w}, h: ${h} };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      spinner.succeed(`Section created: "${result.name}"`);
+      console.log(chalk.gray(`  ID: ${result.id} | Position: (${result.x}, ${result.y}) | Size: ${result.w}x${result.h}`));
+    } catch (e) {
+      spinner.fail('Create section failed: ' + e.message);
+    }
+  });
+
+section
+  .command('list')
+  .description('List all sections on current page')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Finding sections...').start();
+    const code = `(async () => {
+      const sections = figma.currentPage.findAll(n => n.type === 'SECTION');
+      return sections.map(s => ({
+        id: s.id,
+        name: s.name,
+        x: Math.round(s.x),
+        y: Math.round(s.y),
+        w: Math.round(s.width),
+        h: Math.round(s.height),
+        children: s.children.length
+      }));
+    })()`;
+    try {
+      const result = await fastEval(code);
+      spinner.stop();
+      if (result.length === 0) {
+        console.log(chalk.yellow('No sections found on current page'));
+      } else {
+        console.log(chalk.cyan(`\nFound ${result.length} section${result.length > 1 ? 's' : ''}:\n`));
+        result.forEach(s => {
+          console.log(`  ${chalk.white(s.name)} ${chalk.gray(`(${s.id})`)}`);
+          console.log(chalk.gray(`    Position: (${s.x}, ${s.y}) | Size: ${s.w}x${s.h} | Children: ${s.children}`));
+        });
+      }
+    } catch (e) {
+      spinner.fail('List sections failed: ' + e.message);
+    }
+  });
+
+// ============ TEAM LIBRARY ============
+
+const library = program
+  .command('library')
+  .description('Team library operations');
+
+library
+  .command('list')
+  .description('List available library variable collections')
+  .action(async () => {
+    checkConnection();
+    const spinner = ora('Fetching library collections...').start();
+    try {
+      const code = `(async () => {
+const collections = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+if (collections.length === 0) return JSON.stringify({ collections: [] });
+return JSON.stringify({
+  collections: collections.map(c => ({
+    name: c.name,
+    key: c.key,
+    libraryName: c.libraryName
+  }))
+});
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.collections.length === 0) {
+        spinner.succeed('No library variable collections found');
+        return;
+      }
+      spinner.succeed(`Found ${data.collections.length} library collection(s)`);
+      for (const c of data.collections) {
+        console.log(`  ${chalk.bold(c.name)}  ${chalk.dim('key=')}${c.key}  ${chalk.dim('library=')}${c.libraryName}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+library
+  .command('variables <collectionKey>')
+  .description('List variables in a library collection')
+  .action(async (collectionKey) => {
+    checkConnection();
+    const spinner = ora('Fetching library variables...').start();
+    try {
+      const code = `(async () => {
+const vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync('${collectionKey}');
+if (vars.length === 0) return JSON.stringify({ variables: [] });
+return JSON.stringify({
+  variables: vars.map(v => ({
+    name: v.name,
+    resolvedType: v.resolvedType,
+    key: v.key
+  }))
+});
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.variables.length === 0) {
+        spinner.succeed('No variables in this collection');
+        return;
+      }
+      spinner.succeed(`Found ${data.variables.length} variable(s)`);
+      for (const v of data.variables) {
+        console.log(`  ${chalk.bold(v.name)}  ${chalk.cyan(v.resolvedType)}  ${chalk.dim('key=')}${v.key}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+library
+  .command('import-var <variableKey>')
+  .description('Import a variable from team library into local file')
+  .action(async (variableKey) => {
+    checkConnection();
+    const spinner = ora('Importing variable...').start();
+    try {
+      const code = `(async () => {
+const imported = await figma.variables.importVariableByKeyAsync('${variableKey}');
+return JSON.stringify({ name: imported.name, id: imported.id });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      spinner.succeed(`Imported variable: ${chalk.bold(data.name)} (${data.id})`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+library
+  .command('import-component <componentKey>')
+  .description('Import a component from team library')
+  .action(async (componentKey) => {
+    checkConnection();
+    const spinner = ora('Importing component...').start();
+    try {
+      const code = `(async () => {
+const imported = await figma.importComponentByKeyAsync('${componentKey}');
+return JSON.stringify({ name: imported.name, id: imported.id });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      spinner.succeed(`Imported component: ${chalk.bold(data.name)} (${data.id})`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+library
+  .command('import-style <styleKey>')
+  .description('Import a style from team library')
+  .action(async (styleKey) => {
+    checkConnection();
+    const spinner = ora('Importing style...').start();
+    try {
+      const code = `(async () => {
+const imported = await figma.importStyleByKeyAsync('${styleKey}');
+return JSON.stringify({ name: imported.name, id: imported.id });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      spinner.succeed(`Imported style: ${chalk.bold(data.name)} (${data.id})`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+// ============ VARIABLE ALIASES & ADVANCED OPS ============
+
+variables
+  .command('alias <variableId> <targetVariableId>')
+  .description('Make a variable alias another variable')
+  .action(async (variableId, targetVariableId) => {
+    checkConnection();
+    const spinner = ora('Creating variable alias...').start();
+    try {
+      const code = `(async () => {
+const source = await figma.variables.getVariableByIdAsync('${variableId}');
+if (!source) return JSON.stringify({ error: 'Source variable not found: ${variableId}' });
+const target = await figma.variables.getVariableByIdAsync('${targetVariableId}');
+if (!target) return JSON.stringify({ error: 'Target variable not found: ${targetVariableId}' });
+const col = await figma.variables.getVariableCollectionByIdAsync(source.variableCollectionId);
+if (!col) return JSON.stringify({ error: 'Collection not found for source variable' });
+const modeId = col.modes[0].modeId;
+const alias = figma.variables.createVariableAlias(target);
+source.setValueForMode(modeId, alias);
+return JSON.stringify({ source: source.name, target: target.name });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.error) {
+        spinner.fail(data.error);
+      } else {
+        spinner.succeed(`${chalk.bold(data.source)} now aliases ${chalk.bold(data.target)}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+variables
+  .command('bind-prop <nodeId> <propName> <variableId>')
+  .description('Bind a component instance property to a variable')
+  .action(async (nodeId, propName, variableId) => {
+    checkConnection();
+    const spinner = ora('Binding property to variable...').start();
+    try {
+      const code = `(async () => {
+const node = await figma.getNodeByIdAsync('${nodeId}');
+if (!node) return JSON.stringify({ error: 'Node not found: ${nodeId}' });
+const variable = await figma.variables.getVariableByIdAsync('${variableId}');
+if (!variable) return JSON.stringify({ error: 'Variable not found: ${variableId}' });
+const alias = figma.variables.createVariableAlias(variable);
+node.setProperties({ ['${propName}']: alias });
+return JSON.stringify({ node: node.name, prop: '${propName}', variable: variable.name });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.error) {
+        spinner.fail(data.error);
+      } else {
+        spinner.succeed(`Bound ${chalk.cyan(data.prop)} on ${chalk.bold(data.node)} to variable ${chalk.bold(data.variable)}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+variables
+  .command('extend <collectionKey> <name>')
+  .description('Extend a library collection locally')
+  .action(async (collectionKey, name) => {
+    checkConnection();
+    const spinner = ora('Extending library collection...').start();
+    try {
+      const code = `(async () => {
+const col = await figma.variables.extendLibraryCollectionByKeyAsync('${collectionKey}', '${name}');
+return JSON.stringify({ name: col.name, id: col.id, modes: col.modes.map(m => ({ name: m.name, modeId: m.modeId })) });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      spinner.succeed(`Extended collection: ${chalk.bold(data.name)} (${data.id})`);
+      for (const m of data.modes) {
+        console.log(`  Mode: ${chalk.cyan(m.name)}  ${chalk.dim(m.modeId)}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+variables
+  .command('modes <collectionId>')
+  .description('List modes of a variable collection')
+  .action(async (collectionId) => {
+    checkConnection();
+    const spinner = ora('Fetching modes...').start();
+    try {
+      const code = `(async () => {
+const col = await figma.variables.getVariableCollectionByIdAsync('${collectionId}');
+if (!col) return JSON.stringify({ error: 'Collection not found: ${collectionId}' });
+return JSON.stringify({ name: col.name, modes: col.modes.map(m => ({ name: m.name, modeId: m.modeId })) });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.error) {
+        spinner.fail(data.error);
+      } else {
+        spinner.succeed(`Collection: ${chalk.bold(data.name)} — ${data.modes.length} mode(s)`);
+        for (const m of data.modes) {
+          console.log(`  ${chalk.bold(m.name)}  ${chalk.dim(m.modeId)}`);
+        }
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+variables
+  .command('add-mode <collectionId> <modeName>')
+  .description('Add a new mode to a variable collection')
+  .action(async (collectionId, modeName) => {
+    checkConnection();
+    const spinner = ora(`Adding mode "${modeName}"...`).start();
+    try {
+      const code = `(async () => {
+const col = await figma.variables.getVariableCollectionByIdAsync('${collectionId}');
+if (!col) return JSON.stringify({ error: 'Collection not found: ${collectionId}' });
+const newModeId = col.addMode('${modeName}');
+return JSON.stringify({ collection: col.name, modeName: '${modeName}', modeId: newModeId });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.error) {
+        spinner.fail(data.error);
+      } else {
+        spinner.succeed(`Added mode ${chalk.bold(data.modeName)} to ${chalk.bold(data.collection)} (${data.modeId})`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+// ============ ANNOTATIONS ============
+
+const annotate = program
+  .command('annotate')
+  .description('Manage annotations and annotation categories');
+
+annotate
+  .command('list')
+  .description('List all annotation categories in the file')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Fetching annotation categories...').start();
+    try {
+      const code = `(async () => {
+        const categories = await figma.annotations.getAnnotationCategoriesAsync();
+        return JSON.stringify(categories.map(c => ({
+          id: c.id,
+          label: c.label,
+          color: c.color
+        })));
+      })()`;
+      const raw = await fastEval(code);
+      const categories = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.stop();
+      if (!categories.length) {
+        console.log(chalk.yellow('No annotation categories found'));
+        return;
+      }
+      console.log(chalk.cyan(`\nFound ${categories.length} annotation categor${categories.length === 1 ? 'y' : 'ies'}:\n`));
+      categories.forEach(c => {
+        console.log(`  ${chalk.white(c.label)} ${chalk.gray(`(${c.id})`)}`);
+        console.log(chalk.gray(`    Color: ${c.color}`));
+      });
+    } catch (err) {
+      spinner.fail('Failed to list categories: ' + err.message);
+    }
+  });
+
+annotate
+  .command('add-category <label>')
+  .description('Add a new annotation category')
+  .option('--color <color>', 'Category color: blue, green, yellow, red, orange, pink, violet, teal', 'blue')
+  .action(async (label, options) => {
+    await checkConnection();
+    const validColors = ['blue', 'green', 'yellow', 'red', 'orange', 'pink', 'violet', 'teal'];
+    const color = options.color.toLowerCase();
+    if (!validColors.includes(color)) {
+      console.log(chalk.red(`Invalid color: ${options.color}`));
+      console.log(chalk.gray(`  Valid colors: ${validColors.join(', ')}`));
+      process.exit(1);
+    }
+    const spinner = ora(`Adding category "${label}"...`).start();
+    try {
+      const code = `(async () => {
+        const cat = await figma.annotations.addAnnotationCategoryAsync({
+          label: ${JSON.stringify(label)},
+          color: ${JSON.stringify(color)}
+        });
+        return JSON.stringify({ id: cat.id, label: cat.label, color: cat.color });
+      })()`;
+      const raw = await fastEval(code);
+      const cat = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.succeed(`Created category ${chalk.bold(cat.label)} ${chalk.gray(`(${cat.id})`)}`);
+    } catch (err) {
+      spinner.fail('Failed to add category: ' + err.message);
+    }
+  });
+
+annotate
+  .command('set <text>')
+  .description('Add annotation to current selection')
+  .option('-c, --category <id>', 'Annotation category ID')
+  .action(async (text, options) => {
+    await checkConnection();
+    const spinner = ora('Adding annotation...').start();
+    try {
+      const categoryId = options.category || null;
+      const code = `(async () => {
+        const sel = figma.currentPage.selection;
+        if (!sel.length) return JSON.stringify({ error: 'No node selected' });
+        const node = sel[0];
+        if (!('annotations' in node)) return JSON.stringify({ error: 'Node does not support annotations' });
+        const existing = node.annotations ? [...node.annotations] : [];
+        const newAnnotation = { label: ${JSON.stringify(text)} };
+        ${categoryId ? `newAnnotation.categoryId = ${JSON.stringify(categoryId)};` : ''}
+        existing.push(newAnnotation);
+        node.annotations = existing;
+        return JSON.stringify({ name: node.name, id: node.id, total: existing.length });
+      })()`;
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Added annotation to ${chalk.bold(result.name)} ${chalk.gray(`(${result.id})`)} — ${result.total} total`);
+      }
+    } catch (err) {
+      spinner.fail('Failed to add annotation: ' + err.message);
+    }
+  });
+
+annotate
+  .command('get')
+  .description('Read annotations from current selection')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Reading annotations...').start();
+    try {
+      const code = `(async () => {
+        const sel = figma.currentPage.selection;
+        if (!sel.length) return JSON.stringify({ error: 'No node selected' });
+        const results = [];
+        const categories = await figma.annotations.getAnnotationCategoriesAsync();
+        const catMap = {};
+        categories.forEach(c => { catMap[c.id] = c.label; });
+        for (const node of sel) {
+          if (!('annotations' in node) || !node.annotations || !node.annotations.length) continue;
+          results.push({
+            name: node.name,
+            id: node.id,
+            annotations: node.annotations.map(a => ({
+              label: a.label || a.labelMarkdown || '(pinned properties)',
+              category: a.categoryId ? (catMap[a.categoryId] || a.categoryId) : null,
+              properties: a.properties ? a.properties.map(p => p.type) : []
+            }))
+          });
+        }
+        return JSON.stringify(results);
+      })()`;
+      const raw = await fastEval(code);
+      const results = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.stop();
+      if (results.error) {
+        console.log(chalk.red('✗ ' + results.error));
+        return;
+      }
+      if (!results.length) {
+        console.log(chalk.yellow('No annotations found on selected nodes'));
+        return;
+      }
+      results.forEach(node => {
+        console.log(`\n  ${chalk.white(node.name)} ${chalk.gray(`(${node.id})`)} — ${node.annotations.length} annotation${node.annotations.length === 1 ? '' : 's'}`);
+        node.annotations.forEach((a, i) => {
+          const catLabel = a.category ? chalk.blue(` [${a.category}]`) : '';
+          const propsLabel = a.properties.length ? chalk.gray(` (pinned: ${a.properties.join(', ')})`) : '';
+          console.log(`    ${i + 1}. ${a.label}${catLabel}${propsLabel}`);
+        });
+      });
+    } catch (err) {
+      spinner.fail('Failed to read annotations: ' + err.message);
+    }
+  });
+
+// ============ PAGES ============
+
+const page = program
+  .command('page')
+  .description('Page management');
+
+page
+  .command('list')
+  .description('List all pages in the document')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Listing pages...').start();
+    try {
+      const code = `(async () => {
+        const currentId = figma.currentPage.id;
+        const pages = figma.root.children.map(p => ({
+          name: p.name,
+          id: p.id,
+          isCurrent: p.id === currentId,
+          childCount: p.children.length
+        }));
+        return JSON.stringify(pages);
+      })()`;
+      const raw = await fastEval(code);
+      const pages = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.stop();
+      console.log(chalk.cyan(`\n${pages.length} page${pages.length === 1 ? '' : 's'}:\n`));
+      pages.forEach((p, i) => {
+        const marker = p.isCurrent ? chalk.green(' ◉') : chalk.gray(' ○');
+        const current = p.isCurrent ? chalk.green(' (current)') : '';
+        console.log(`  ${marker} ${chalk.white(p.name)}${current} ${chalk.gray(`(${p.id}) — ${p.childCount} children`)}`);
+      });
+    } catch (err) {
+      spinner.fail('Failed to list pages: ' + err.message);
+    }
+  });
+
+page
+  .command('switch <name>')
+  .description('Switch to a page by name')
+  .action(async (name) => {
+    await checkConnection();
+    const spinner = ora(`Switching to page "${name}"...`).start();
+    try {
+      const code = `(async () => {
+        const target = figma.root.children.find(p => p.name === ${JSON.stringify(name)});
+        if (!target) {
+          const available = figma.root.children.map(p => p.name);
+          return JSON.stringify({ error: 'Page not found: ${name.replace(/'/g, "\\'")}', available });
+        }
+        await figma.setCurrentPageAsync(target);
+        return JSON.stringify({ name: target.name, id: target.id });
+      })()`;
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (result.error) {
+        spinner.fail(result.error);
+        if (result.available) {
+          console.log(chalk.gray(`  Available pages: ${result.available.join(', ')}`));
+        }
+      } else {
+        spinner.succeed(`Switched to page ${chalk.bold(result.name)} ${chalk.gray(`(${result.id})`)}`);
+      }
+    } catch (err) {
+      spinner.fail('Failed to switch page: ' + err.message);
+    }
+  });
+
+page
+  .command('create <name>')
+  .description('Create a new page')
+  .action(async (name) => {
+    await checkConnection();
+    const spinner = ora(`Creating page "${name}"...`).start();
+    try {
+      const code = `(async () => {
+        const newPage = figma.createPage();
+        newPage.name = ${JSON.stringify(name)};
+        return JSON.stringify({ name: newPage.name, id: newPage.id });
+      })()`;
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.succeed(`Created page ${chalk.bold(result.name)} ${chalk.gray(`(${result.id})`)}`);
+    } catch (err) {
+      spinner.fail('Failed to create page: ' + err.message);
+    }
+  });
+
+// ============ VIEWPORT ============
+
+const viewport = program
+  .command('viewport')
+  .description('Viewport control');
+
+viewport
+  .command('zoom <level>')
+  .description('Set zoom level: "fit" (zoom to fit all), "selection" (zoom to selection), or a number (e.g. 0.5, 2)')
+  .action(async (level) => {
+    await checkConnection();
+    const spinner = ora('Setting zoom...').start();
+    try {
+      let code;
+      if (level === 'fit') {
+        code = `(async () => {
+          const allNodes = figma.currentPage.children;
+          if (!allNodes.length) return JSON.stringify({ error: 'No nodes on current page' });
+          figma.viewport.scrollAndZoomIntoView(allNodes);
+          return JSON.stringify({ zoom: figma.viewport.zoom, mode: 'fit' });
+        })()`;
+      } else if (level === 'selection') {
+        code = `(async () => {
+          const sel = figma.currentPage.selection;
+          if (!sel.length) return JSON.stringify({ error: 'No nodes selected' });
+          figma.viewport.scrollAndZoomIntoView(sel);
+          return JSON.stringify({ zoom: figma.viewport.zoom, mode: 'selection', count: sel.length });
+        })()`;
+      } else {
+        const num = parseFloat(level);
+        if (isNaN(num) || num <= 0) {
+          spinner.fail(`Invalid zoom level: ${level}. Use "fit", "selection", or a positive number.`);
+          return;
+        }
+        code = `(async () => {
+          figma.viewport.zoom = ${num};
+          return JSON.stringify({ zoom: figma.viewport.zoom, mode: 'numeric' });
+        })()`;
+      }
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        const zoomPct = Math.round(result.zoom * 100);
+        spinner.succeed(`Zoom set to ${chalk.bold(zoomPct + '%')}${result.count ? ` (${result.count} node${result.count > 1 ? 's' : ''})` : ''}`);
+      }
+    } catch (err) {
+      spinner.fail('Failed to set zoom: ' + err.message);
+    }
+  });
+
+viewport
+  .command('center <nodeId>')
+  .description('Center viewport on a node')
+  .action(async (nodeId) => {
+    await checkConnection();
+    const spinner = ora('Centering viewport...').start();
+    try {
+      const code = `(async () => {
+        const node = await figma.getNodeByIdAsync(${JSON.stringify(nodeId)});
+        if (!node) return JSON.stringify({ error: 'Node not found: ${nodeId.replace(/'/g, "\\'")}' });
+        figma.viewport.scrollAndZoomIntoView([node]);
+        return JSON.stringify({ name: node.name, id: node.id, zoom: figma.viewport.zoom });
+      })()`;
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Centered on ${chalk.bold(result.name)} ${chalk.gray(`(${result.id})`)} at ${Math.round(result.zoom * 100)}%`);
+      }
+    } catch (err) {
+      spinner.fail('Failed to center viewport: ' + err.message);
+    }
+  });
+
 program.parse();

@@ -19,6 +19,40 @@ export function getCdpPort() {
   return CDP_PORT;
 }
 
+// ── Desktop App Selection ──
+// fig-start sets FIGMA_DESKTOP_APP=stable|beta before launching agents.
+// index.js also reads desktopApp from config and sets the env var.
+
+/**
+ * Get the selected desktop app key ('stable' or 'beta')
+ */
+export function getSelectedDesktopApp() {
+  const raw = (process.env.FIGMA_DESKTOP_APP || 'stable').toLowerCase();
+  return raw === 'beta' || raw === 'figma beta' || raw === 'figma-beta' ? 'beta' : 'stable';
+}
+
+/**
+ * Get the display label for the selected desktop app
+ */
+export function getDesktopAppLabel() {
+  return getSelectedDesktopApp() === 'beta' ? 'Figma Beta' : 'Figma';
+}
+
+/**
+ * Get the process name for the selected desktop app (for pkill/taskkill)
+ */
+export function getDesktopAppProcessName() {
+  return getSelectedDesktopApp() === 'beta' ? 'Figma Beta' : 'Figma';
+}
+
+/**
+ * Get the macOS Info.plist path for the selected desktop app (version detection)
+ */
+export function getDesktopAppVersionPlistPath() {
+  const appName = getDesktopAppLabel();
+  return `/Applications/${appName}.app/Contents/Info.plist`;
+}
+
 /**
  * Find Windows Figma app folder (handles versioned folders like app-124.0.0)
  */
@@ -93,12 +127,13 @@ function findWindowsFigmaExe() {
   return null;
 }
 
-// Figma app.asar locations by platform
-const ASAR_PATHS = {
-  darwin: '/Applications/Figma.app/Contents/Resources/app.asar',
-  win32: null, // Detected dynamically
-  linux: '/opt/figma/resources/app.asar'
-};
+/**
+ * Get the macOS app.asar path based on selected desktop app
+ */
+function getDarwinAsarPath() {
+  const appName = getDesktopAppLabel();
+  return `/Applications/${appName}.app/Contents/Resources/app.asar`;
+}
 
 // The string that blocks remote debugging
 const BLOCK_STRING = Buffer.from('removeSwitch("remote-debugging-port")');
@@ -109,10 +144,16 @@ const PATCH_STRING = Buffer.from('removeSwitch("remote-debugXing-port")');
  * Get the path to Figma's app.asar file
  */
 export function getAsarPath() {
-  if (process.platform === 'win32') {
-    return findWindowsFigmaPath();
+  switch (process.platform) {
+    case 'darwin':
+      return getDarwinAsarPath();
+    case 'win32':
+      return findWindowsFigmaPath();
+    case 'linux':
+      return '/opt/figma/resources/app.asar';
+    default:
+      return null;
   }
-  return ASAR_PATHS[process.platform] || null;
 }
 
 /**
@@ -192,8 +233,9 @@ export function patchFigma() {
 
   // On macOS, re-sign the app
   if (process.platform === 'darwin') {
+    const appPath = `/Applications/${getDesktopAppLabel()}.app`;
     try {
-      execSync('codesign --force --deep --sign - /Applications/Figma.app', { stdio: 'ignore' });
+      execSync(`codesign --force --deep --sign - ${JSON.stringify(appPath)}`, { stdio: 'ignore' });
     } catch {
       // Codesign might fail but patch might still work
     }
@@ -229,8 +271,9 @@ export function unpatchFigma() {
 
   // On macOS, re-sign the app
   if (process.platform === 'darwin') {
+    const appPath = `/Applications/${getDesktopAppLabel()}.app`;
     try {
-      execSync('codesign --force --deep --sign - /Applications/Figma.app', { stdio: 'ignore' });
+      execSync(`codesign --force --deep --sign - ${JSON.stringify(appPath)}`, { stdio: 'ignore' });
     } catch {
       // Codesign might fail but unpatch might still work
     }
@@ -243,9 +286,10 @@ export function unpatchFigma() {
  * Get the command to start Figma with remote debugging
  */
 export function getFigmaCommand(port = 9222) {
+  const appName = getDesktopAppLabel();
   switch (process.platform) {
     case 'darwin':
-      return `open -a Figma --args --remote-debugging-port=${port}`;
+      return `open -a ${JSON.stringify(appName)} --args --remote-debugging-port=${port}`;
     case 'win32': {
       const exePath = findWindowsFigmaExe();
       if (exePath) {
@@ -264,9 +308,10 @@ export function getFigmaCommand(port = 9222) {
  * Get the path to Figma binary
  */
 export function getFigmaBinaryPath() {
+  const appName = getDesktopAppLabel();
   switch (process.platform) {
     case 'darwin':
-      return '/Applications/Figma.app/Contents/MacOS/Figma';
+      return `/Applications/${appName}.app/Contents/MacOS/${appName}`;
     case 'win32':
       return findWindowsFigmaExe() || `${process.env.LOCALAPPDATA}\\Figma\\Figma.exe`;
     case 'linux':
@@ -284,5 +329,9 @@ export default {
   unpatchFigma,
   getFigmaCommand,
   getFigmaBinaryPath,
-  getCdpPort
+  getCdpPort,
+  getSelectedDesktopApp,
+  getDesktopAppLabel,
+  getDesktopAppProcessName,
+  getDesktopAppVersionPlistPath
 };

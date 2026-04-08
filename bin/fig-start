@@ -218,8 +218,10 @@ launch_agent() {
     echo "    1) Claude Code (claude)"
     echo "    2) Codex (codex)"
     echo "    3) Gemini (gemini)"
+    echo "    4) Crush (crush)"
+    echo "    5) OpenCode (opencode)"
     echo ""
-    printf "  Enter choice [1/2/3, default: 1]: "
+    printf "  Enter choice [1-5, default: 1]: "
     read -r agent_choice < /dev/tty
 
     echo ""
@@ -254,6 +256,9 @@ launch_agent() {
         fi
     fi
 
+    # Export env vars for agents that read AGENTS.md directly (Crush, OpenCode)
+    export FIGMA_SAFE_MODE="$SAFE_MODE"
+
     case "$agent_choice" in
         2|codex|Codex)
             echo -e "  ${GREEN}Launching Codex...${NC}"
@@ -269,6 +274,26 @@ launch_agent() {
             echo -e "  ${GREEN}Launching Gemini...${NC}"
             echo ""
             exec gemini --approval-mode yolo -i "$AGENT_CONTEXT"
+            ;;
+        4|crush|Crush)
+            if ! command -v crush > /dev/null 2>&1; then
+                echo -e "  ${RED}Crush is not installed or not on PATH.${NC}"
+                echo "  Install: brew install charmbracelet/tap/crush"
+                exit 1
+            fi
+            echo -e "  ${GREEN}Launching Crush...${NC}"
+            echo ""
+            exec crush --yolo
+            ;;
+        5|opencode|OpenCode|openCode)
+            if ! command -v opencode > /dev/null 2>&1; then
+                echo -e "  ${RED}OpenCode is not installed or not on PATH.${NC}"
+                echo "  Install: go install github.com/opencode-ai/opencode@latest"
+                exit 1
+            fi
+            echo -e "  ${GREEN}Launching OpenCode...${NC}"
+            echo ""
+            exec opencode
             ;;
         *)
             echo -e "  ${GREEN}Launching Claude Code...${NC}"

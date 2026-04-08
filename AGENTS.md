@@ -30,6 +30,22 @@ CLI that controls Figma Desktop directly. No API key needed.
 | "create a slot"                | `node src/index.js slot create "Name"`     |
 | "list slots"                   | `node src/index.js slot list`              |
 | "reset slot"                   | `node src/index.js slot reset`             |
+| "list styles"                  | `node src/index.js style list`             |
+| "create paint style"           | `node src/index.js style create-paint "Name" --color "#hex"` |
+| "create text style"            | `node src/index.js style create-text "Name" --size 18` |
+| "undo"                         | `node src/index.js undo`                   |
+| "save version"                 | `node src/index.js undo save "Title"`      |
+| "union shapes"                 | `node src/index.js bool union`             |
+| "subtract shapes"              | `node src/index.js bool subtract`          |
+| "create section"               | `node src/index.js section create "Name"`  |
+| "list library vars"            | `node src/index.js library list`           |
+| "import library var"           | `node src/index.js library import-var "key"` |
+| "alias variable"               | `node src/index.js var alias "id1" "id2"`  |
+| "add variable mode"            | `node src/index.js var add-mode "collId" "Dark"` |
+| "annotate node"                | `node src/index.js annotate set "Note text"` |
+| "list pages"                   | `node src/index.js page list`              |
+| "switch page"                  | `node src/index.js page switch "Page 2"`   |
+| "zoom to fit"                  | `node src/index.js viewport zoom fit`      |
 
 **Full command reference:** See REFERENCE.md
 
@@ -335,6 +351,181 @@ node src/index.js slot preferred "Slot#1:2" "button-comp-id" "icon-comp-id"
 - Reordering children
 - Removing children
 - Reset to defaults with `slot reset`
+
+---
+
+## Styles
+
+Manage paint, text, effect, and grid styles for design systems.
+
+```bash
+# List all styles
+node src/index.js style list
+node src/index.js style list -t paint    # Filter by type
+
+# Create styles
+node src/index.js style create-paint "Primary" --color "#3b82f6"
+node src/index.js style create-text "Heading/H1" --size 32 --weight "Bold" --font "Inter"
+node src/index.js style create-effect "Shadow/Medium" --blur 8 --y 4 --opacity 0.2
+
+# Apply style to selection
+node src/index.js style apply "S:abc123"
+
+# Delete style
+node src/index.js style delete "S:abc123"
+
+```
+
+---
+
+## Undo & Version History
+
+Reversibility for all operations.
+
+```bash
+# Undo last action
+node src/index.js undo
+
+# Create checkpoint in undo history
+node src/index.js undo commit
+
+# Save named version to file history
+node src/index.js undo save "Before redesign" --description "Snapshot before header changes"
+
+```
+
+---
+
+## Boolean Operations
+
+Combine shapes using boolean operations. Select 2+ nodes first.
+
+```bash
+node src/index.js bool union       # Merge shapes
+node src/index.js bool subtract    # First shape minus rest
+node src/index.js bool intersect   # Keep overlapping area
+node src/index.js bool exclude     # Remove overlapping area
+
+```
+
+---
+
+## Sections
+
+Organize canvas with section containers.
+
+```bash
+# Create section
+node src/index.js section create "Header Components" --w 800 --h 600
+
+# List sections
+node src/index.js section list
+
+```
+
+---
+
+## Team Library
+
+Import components, variables, and styles from team libraries. Requires teamlibrary permission (already enabled).
+
+```bash
+# List available library collections
+node src/index.js library list
+
+# List variables in a collection
+node src/index.js library variables "collection-key"
+
+# Import from library
+node src/index.js library import-var "variable-key"
+node src/index.js library import-component "component-key"
+node src/index.js library import-style "style-key"
+
+```
+
+---
+
+## Variable Aliases & Modes
+
+Advanced variable operations.
+
+```bash
+# Create variable alias (source aliases target)
+node src/index.js var alias "sourceVarId" "targetVarId"
+
+# Bind component property to variable
+node src/index.js var bind-prop "nodeId" "propName" "variableId"
+
+# Extend library collection locally
+node src/index.js var extend "collectionKey" "Local Overrides"
+
+# List modes of a collection
+node src/index.js var modes "collectionId"
+
+# Add mode to collection
+node src/index.js var add-mode "collectionId" "Dark"
+
+```
+
+---
+
+## Annotations
+
+Add annotations to nodes for documentation and review.
+
+```bash
+# List annotation categories
+node src/index.js annotate list
+
+# Add category
+node src/index.js annotate add-category "Review" --color blue
+
+# Add annotation to selected node
+node src/index.js annotate set "Needs accessibility review" --category "cat-id"
+
+# Read annotations from selection
+node src/index.js annotate get
+
+```
+
+---
+
+## Pages
+
+Manage document pages.
+
+```bash
+# List all pages
+node src/index.js page list
+
+# Switch to page
+node src/index.js page switch "Components"
+
+# Create new page
+node src/index.js page create "Tokens"
+
+```
+
+---
+
+## Viewport
+
+Control the viewport position and zoom.
+
+```bash
+# Zoom to fit all content
+node src/index.js viewport zoom fit
+
+# Zoom to selection
+node src/index.js viewport zoom selection
+
+# Set specific zoom level
+node src/index.js viewport zoom 0.5
+
+# Center on a node
+node src/index.js viewport center "nodeId"
+
+```
 
 ---
 
