@@ -8,12 +8,12 @@
   <a href="https://intodesignsystems.com"><img src="https://img.shields.io/badge/Into_Design_Systems-intodesignsystems.com-ff6b35" alt="Into Design Systems"></a>
   <img src="https://img.shields.io/badge/Figma-Desktop-purple" alt="Figma Desktop">
   <img src="https://img.shields.io/badge/No_API_Key-Required-green" alt="No API Key">
-  <img src="https://img.shields.io/badge/Version-v1.1.0-111827" alt="Version v1.1.0">
-  <img src="https://img.shields.io/badge/Claude_%2B_Codex_%2B_Gemini-Ready-blue" alt="Claude, Codex, and Gemini">
+  <img src="https://img.shields.io/badge/Version-v2.1.0-111827" alt="Version v2.1.0">
+  <img src="https://img.shields.io/badge/Claude_%2B_Codex_%2B_Gemini_%2B_Crush_%2B_OpenCode-Ready-blue" alt="Claude, Codex, Gemini, Crush, and OpenCode">
 </p>
 
 <p align="center">
-  <b>Control Figma Desktop with Claude, Codex, or Gemini.</b><br>
+  <b>Control Figma Desktop with Claude, Codex, Gemini, Crush, or OpenCode.</b><br>
   Full read/write access. No API key required.<br>
   Just talk to your coding agent about your designs.
 </p>
@@ -39,24 +39,24 @@ A CLI that connects directly to Figma Desktop and gives you complete control:
 - **Lint & Accessibility** — Contrast checker, touch targets, design rules
 - **Export** — PNG, SVG, JSX, Storybook stories, CSS variables, Tailwind config
 - **Batch Operations** — Rename layers, find/replace text, create 100 variables at once
-- **Works with Claude, Codex, and Gemini** — `fig-start` launches the selected agent with the right repo context preloaded
+- **Works with Claude, Codex, Gemini, Crush, and OpenCode** — `fig-start` launches the selected agent with the right repo context preloaded
 
-This repository is an agent-friendly variant of the original workflow with launch support for Claude, Codex, and Gemini.
+This repository is an agent-friendly variant of the original workflow with launch support for Claude, Codex, Gemini, Crush, and OpenCode.
 The CLI commands stay the same: `fig-start`, `figma-cli`, and `figma-ds-cli`.
 
 ## What This Fork Adds
 
 Compared with the original [`roger6vi/figma-cli`](https://github.com/roger6vi/figma-cli), this repository adds:
 
-- **Multi-agent launch flow** — `fig-start` can hand off the same repo context to Claude, Codex, or Gemini.
-- **Shared agent instructions** — `AGENTS.md` and `GEMINI.md` keep the operational context in-repo instead of relying on a single Claude-only file.
+- **Multi-agent launch flow** — `fig-start` can hand off the same repo context to Claude, Codex, Gemini, Crush, or OpenCode.
+- **Shared agent instructions** — `AGENTS.md` plus adapter files like `GEMINI.md`, `CRUSH.md`, and `OPENCODE.md` keep the operational context in-repo instead of relying on a single Claude-only file.
 - **Better packaged CLI workflow** — the package ships the Safe Mode plugin assets, the `figma-cli` wrapper, and repo-aware shell aliases.
 - **Richer read/inspect capabilities** — structured `get`, exact/coordinate `find`, `node tree --json`, and `node inspect` improve how the CLI reads Figma state through the daemon/plugin bridge.
 - **Signed release history** — signed tags plus [`CHANGELOG.md`](./CHANGELOG.md) make it easier to see what changed between the initial snapshot and the current fork release.
 
 ## Why This CLI?
 
-This project includes an `AGENTS.md` file plus a `GEMINI.md` import so the supported agents share the same workflow context. It contains:
+This project includes an `AGENTS.md` file plus lightweight adapter files (`GEMINI.md`, `CRUSH.md`, `OPENCODE.md`) so the supported agents share the same workflow context. It contains:
 
 - All available commands and their syntax
 - Best practices (e.g., "use `render` for text-heavy designs")
@@ -72,7 +72,7 @@ This project includes an `AGENTS.md` file plus a `GEMINI.md` import so the suppo
 
 - **Node.js 18+** — `brew install node` (or [download](https://nodejs.org/))
 - **Figma Desktop** (free account works)
-- **Claude, Codex, or Gemini**
+- **Claude, Codex, Gemini, Crush, or OpenCode**
 - **macOS or Windows** (macOS recommended, Windows supported)
 - **macOS Full Disk Access** for Terminal (Yolo Mode only — not needed for [Safe Mode](#-safe-mode--for-restricted-environments))
 
@@ -101,16 +101,16 @@ This will:
 1. Start Figma (if not running)
 2. Connect to Figma (Yolo Mode: patches Figma once for direct access)
 3. Show your open Figma files: pick one with arrow keys
-4. Ask whether to launch Claude, Codex, or Gemini
+4. Ask whether to launch Claude, Codex, Gemini, Crush, or OpenCode
 5. Launch the selected agent with the repo context pre-loaded
 
-**Done.** Talk to Claude, Codex, or Gemini about your Figma file.
+**Done.** Talk to Claude, Codex, Gemini, Crush, or OpenCode about your Figma file.
 
 > **Note:** `fig-start` works from any directory. The setup script saves the repo location to `~/.figma-cli/config.json`.
 
 ### fig-start Options
 
-`fig-start` now includes an agent picker, so the same launcher works for Claude, Codex, and Gemini.
+`fig-start` now includes an agent picker, so the same launcher works for Claude, Codex, Gemini, Crush, and OpenCode.
 
 | Command | Description |
 |---------|-------------|
@@ -155,7 +155,7 @@ Then tell the agent: `Connect to Figma`
 
 ## Using It
 
-Once connected, just talk to Claude, Codex, or Gemini:
+Once connected, just talk to Claude, Codex, Gemini, Crush, or OpenCode:
 
 > "Add shadcn colors to my project"
 

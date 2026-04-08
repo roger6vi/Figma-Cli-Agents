@@ -2,6 +2,34 @@
 
 All notable changes to this repository are documented here.
 
+## [2.1.0] - 2026-04-08
+
+### Added
+
+- Crush and OpenCode as supported `fig-start` launch targets alongside Claude Code, Codex, and Gemini.
+- `CRUSH.md` and `OPENCODE.md` adapter files so those agents can load the same in-repo workflow context from `AGENTS.md`.
+- Full Figma Styles commands: `style list`, `style create-paint`, `style create-text`, `style create-effect`, `style apply`, and `style delete`.
+- Undo, version history, and reversible workflows with `undo`, `undo commit`, and `undo save`.
+- Boolean shape commands: `bool union`, `bool subtract`, `bool intersect`, and `bool exclude`.
+- Canvas organization commands with `section create` and `section list`.
+- Team library and advanced variable workflows: `library *`, `var alias`, `var bind-prop`, `var extend`, `var modes`, and `var add-mode`.
+- Annotation, page, and viewport command groups for in-canvas review and navigation.
+
+### Fixed
+
+- Restored missing `figma-patch.js` exports that `src/index.js` was already importing (`getSelectedDesktopApp`, `getDesktopAppLabel`, `getDesktopAppProcessName`, and `getDesktopAppVersionPlistPath`).
+- Made desktop-app path detection Beta-aware so macOS commands, binary paths, app.asar paths, plist reads, and codesign all respect the selected app.
+
+### Changed
+
+- Updated `AGENTS.md` to document the expanded command surface and new agent launch options.
+- Updated package metadata, README release badge/copy, and plugin handshake versioning to `2.1.0`.
+- Extended launcher test coverage for Crush/OpenCode support and env-based session context.
+
+### Safe Mode / Plugin Bridge
+
+- The new style, library, annotation, page, viewport, and undo-related commands use the same fast eval path, so they work in both Yolo Mode and Safe Mode through the local plugin bridge.
+
 ## [1.1.0] - 2026-03-08
 
 ### Added
