@@ -8,6 +8,13 @@
 import WebSocket from 'ws';
 import { getCdpPort } from './figma-patch.js';
 
+/**
+ * Canonical regex for identifying Figma design/file pages.
+ * Matches URLs containing /design/<key>/ or /file/<key>/.
+ * Exported so tests import this definition instead of redefining it.
+ */
+export const FIGMA_DESIGN_PAGE_RE = /figma\.com\/(design|file)\//;
+
 export class FigmaClient {
   constructor() {
     this.ws = null;
@@ -54,9 +61,9 @@ export class FigmaClient {
     const pages = await response.json();
 
     // Find design/file pages (not feed, home, etc.)
-    // Use regex with trailing slash to avoid matching /files/ (feed/home pages)
+    // Use FIGMA_DESIGN_PAGE_RE with trailing slash to avoid matching /files/ (feed/home pages)
     const isDesignPage = (p) =>
-      p.url && /figma\.com\/(design|file)\//.test(p.url);
+      p.url && FIGMA_DESIGN_PAGE_RE.test(p.url);
 
     let page;
     if (pageTitle) {
@@ -73,7 +80,7 @@ export class FigmaClient {
     this.pageUrl = page.url;
 
     // Detect file type from URL
-    const typeMatch = page.url.match(/figma\.com\/(design|file)\//);
+    const typeMatch = page.url.match(FIGMA_DESIGN_PAGE_RE);
     this.fileType = typeMatch ? typeMatch[1] : 'unknown';
 
     return new Promise((resolve, reject) => {

@@ -1,18 +1,26 @@
-import { describe, it } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const npmTempRoot = resolve(tmpdir(), 'figma-cli-test-npm');
-const npmCacheDir = resolve(npmTempRoot, 'cache');
-const npmLogsDir = resolve(npmTempRoot, 'logs');
 const packageJson = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
 const packageLock = JSON.parse(readFileSync(resolve(repoRoot, 'package-lock.json'), 'utf8'));
 let packedFiles = null;
+let npmTempRoot = null;
+
+before(() => {
+  npmTempRoot = mkdtempSync(join(tmpdir(), 'figma-cli-pack-test-'));
+});
+
+after(() => {
+  if (npmTempRoot && existsSync(npmTempRoot)) {
+    rmSync(npmTempRoot, { recursive: true, force: true });
+  }
+});
 
 function normalizePackPath(filePath) {
   return filePath.replace(/\\/g, '/');
@@ -21,7 +29,10 @@ function normalizePackPath(filePath) {
 function getPackedFiles() {
   if (packedFiles) return packedFiles;
 
-  const output = execSync('npm pack --dry-run --json', {
+  const npmCacheDir = join(npmTempRoot, 'cache');
+  const npmLogsDir = join(npmTempRoot, 'logs');
+
+  const output = execFileSync('npm', ['pack', '--dry-run', '--json'], {
     cwd: repoRoot,
     encoding: 'utf8',
     env: {
@@ -118,6 +129,16 @@ describe('package bin integrity', () => {
   });
 });
 
+describe('package bin shape', () => {
+  it('has exactly the expected bin entries', () => {
+    const bin = packageJson.bin;
+    assert.equal(typeof bin, 'object', 'package.json#bin must be an object');
+    const keys = Object.keys(bin).sort();
+    const expected = ['fig-start', 'figma-cli', 'figma-ds-cli'].sort();
+    assert.deepEqual(keys, expected, 'bin must have exactly figma-cli, figma-ds-cli, fig-start');
+  });
+});
+
 describe('package-lock sync', () => {
   it('matches package.json version in root lockfile metadata', () => {
     assert.equal(packageLock.version, packageJson.version);
@@ -126,5 +147,9 @@ describe('package-lock sync', () => {
 
   it('matches package.json bin map in root lockfile metadata', () => {
     assert.deepEqual(packageLock.packages[''].bin, packageJson.bin);
+  });
+
+  it('uses lockfileVersion 3 (npm 7+ format)', () => {
+    assert.equal(packageLock.lockfileVersion, 3, 'package-lock.json must use lockfileVersion 3');
   });
 });

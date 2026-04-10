@@ -1,13 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { FigmaClient } from '../src/figma-client.js';
+import { FigmaClient, FIGMA_DESIGN_PAGE_RE } from '../src/figma-client.js';
 
 // ----------------------------------------------------------------
 // 1. URL Pattern Matching
+// Uses the canonical FIGMA_DESIGN_PAGE_RE exported from src/figma-client.js
+// to avoid implementation drift (tests were previously redefining the regex locally).
 // ----------------------------------------------------------------
 describe('URL pattern matching', () => {
   const isDesignPage = (url) =>
-    url != null && /figma\.com\/(design|file)\//.test(url);
+    url != null && FIGMA_DESIGN_PAGE_RE.test(url);
 
   it('should match design URLs', () => {
     assert.strictEqual(isDesignPage('https://www.figma.com/design/abc123/My-File'), true);
@@ -47,7 +49,7 @@ describe('URL pattern matching', () => {
 // ----------------------------------------------------------------
 describe('file type detection', () => {
   const extractFileType = (url) => {
-    const match = url.match(/figma\.com\/(design|file)\//);
+    const match = url.match(FIGMA_DESIGN_PAGE_RE);
     return match ? match[1] : 'unknown';
   };
 
