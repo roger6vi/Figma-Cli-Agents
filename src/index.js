@@ -9104,4 +9104,81 @@ annotate
     }
   });
 
+// ============ VIEWPORT ============
+
+const viewport = program
+  .command('viewport')
+  .description('Viewport control');
+
+viewport
+  .command('zoom <level>')
+  .description('Set zoom level: "fit" (zoom to fit all), "selection" (zoom to selection), or a number (e.g. 0.5, 2)')
+  .action(async (level) => {
+    await checkConnection();
+    const spinner = ora('Setting zoom...').start();
+    try {
+      let code;
+      if (level === 'fit') {
+        code = `(async () => {
+          const allNodes = figma.currentPage.children;
+          if (!allNodes.length) return JSON.stringify({ error: 'No nodes on current page' });
+          figma.viewport.scrollAndZoomIntoView(allNodes);
+          return JSON.stringify({ zoom: figma.viewport.zoom, mode: 'fit' });
+        })()`;
+      } else if (level === 'selection') {
+        code = `(async () => {
+          const sel = figma.currentPage.selection;
+          if (!sel.length) return JSON.stringify({ error: 'No nodes selected' });
+          figma.viewport.scrollAndZoomIntoView(sel);
+          return JSON.stringify({ zoom: figma.viewport.zoom, mode: 'selection', count: sel.length });
+        })()`;
+      } else {
+        const num = parseFloat(level);
+        if (isNaN(num) || num <= 0) {
+          spinner.fail(`Invalid zoom level: ${level}. Use "fit", "selection", or a positive number.`);
+          return;
+        }
+        code = `(async () => {
+          figma.viewport.zoom = ${num};
+          return JSON.stringify({ zoom: figma.viewport.zoom, mode: 'numeric' });
+        })()`;
+      }
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        const zoomPct = Math.round(result.zoom * 100);
+        spinner.succeed(`Zoom set to ${chalk.bold(zoomPct + '%')}${result.count ? ` (${result.count} node${result.count > 1 ? 's' : ''})` : ''}`);
+      }
+    } catch (err) {
+      spinner.fail('Failed to set zoom: ' + err.message);
+    }
+  });
+
+viewport
+  .command('center <nodeId>')
+  .description('Center viewport on a node')
+  .action(async (nodeId) => {
+    await checkConnection();
+    const spinner = ora('Centering viewport...').start();
+    try {
+      const code = `(async () => {
+        const node = await figma.getNodeByIdAsync(${JSON.stringify(nodeId)});
+        if (!node) return JSON.stringify({ error: 'Node not found: ${nodeId.replace(/'/g, "\\'")}' });
+        figma.viewport.scrollAndZoomIntoView([node]);
+        return JSON.stringify({ name: node.name, id: node.id, zoom: figma.viewport.zoom });
+      })()`;
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Centered on ${chalk.bold(result.name)} ${chalk.gray(`(${result.id})`)} at ${Math.round(result.zoom * 100)}%`);
+      }
+    } catch (err) {
+      spinner.fail('Failed to center viewport: ' + err.message);
+    }
+  });
+
 program.parse();
