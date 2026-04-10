@@ -8316,4 +8316,266 @@ blocksCmd
     }
   });
 
+// ============ STYLES ============
+
+const style = program.command('style').description('Manage Figma styles');
+
+style
+  .command('list')
+  .description('List all local styles (paint, text, effect, grid)')
+  .option('-t, --type <type>', 'Filter by type: paint, text, effect, grid')
+  .action(async (options) => {
+    checkConnection();
+    const spinner = ora('Fetching styles...').start();
+    try {
+      const filterType = options.type || 'all';
+      const code = `(async () => {
+        const results = [];
+        const types = '${filterType}';
+
+        if (types === 'all' || types === 'paint') {
+          const paints = await figma.getLocalPaintStylesAsync();
+          for (const s of paints) {
+            results.push({ id: s.id, name: s.name, type: 'PAINT', description: s.description || '' });
+          }
+        }
+        if (types === 'all' || types === 'text') {
+          const texts = await figma.getLocalTextStylesAsync();
+          for (const s of texts) {
+            results.push({ id: s.id, name: s.name, type: 'TEXT', fontSize: s.fontSize, fontName: s.fontName, description: s.description || '' });
+          }
+        }
+        if (types === 'all' || types === 'effect') {
+          const effects = await figma.getLocalEffectStylesAsync();
+          for (const s of effects) {
+            results.push({ id: s.id, name: s.name, type: 'EFFECT', description: s.description || '' });
+          }
+        }
+        if (types === 'all' || types === 'grid') {
+          const grids = await figma.getLocalGridStylesAsync();
+          for (const s of grids) {
+            results.push({ id: s.id, name: s.name, type: 'GRID', description: s.description || '' });
+          }
+        }
+
+        return JSON.stringify(results);
+      })()`;
+      const raw = await fastEval(code);
+      const styles = JSON.parse(raw);
+      spinner.succeed(`Found ${styles.length} style(s)`);
+
+      if (styles.length === 0) {
+        console.log(chalk.dim('  No styles found.'));
+        return;
+      }
+
+      const grouped = {};
+      for (const s of styles) {
+        if (!grouped[s.type]) grouped[s.type] = [];
+        grouped[s.type].push(s);
+      }
+
+      for (const [type, items] of Object.entries(grouped)) {
+        console.log(chalk.bold.cyan(`\n  ${type} (${items.length})`));
+        for (const s of items) {
+          let detail = '';
+          if (s.type === 'TEXT' && s.fontName) {
+            detail = chalk.dim(` — ${s.fontName.family} ${s.fontName.style} ${s.fontSize}px`);
+          }
+          if (s.description) {
+            detail += chalk.dim(` "${s.description}"`);
+          }
+          console.log(`    ${chalk.white(s.name)} ${chalk.dim(s.id)}${detail}`);
+        }
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('create-paint <name>')
+  .description('Create a paint style with a solid color')
+  .option('--color <hex>', 'Color in hex format', '#000000')
+  .option('--description <text>', 'Style description')
+  .action(async (name, options) => {
+    checkConnection();
+    const spinner = ora(`Creating paint style "${name}"...`).start();
+    try {
+      const hex = options.color.replace('#', '');
+      const desc = options.description || '';
+      const code = `(async () => {
+        function hexToRgb(hex) {
+          hex = hex.replace('#', '');
+          return {
+            r: parseInt(hex.substr(0, 2), 16) / 255,
+            g: parseInt(hex.substr(2, 2), 16) / 255,
+            b: parseInt(hex.substr(4, 2), 16) / 255
+          };
+        }
+        const style = figma.createPaintStyle();
+        style.name = ${JSON.stringify(name)};
+        if (${JSON.stringify(desc)}) style.description = ${JSON.stringify(desc)};
+        const color = hexToRgb('${hex}');
+        style.paints = [{ type: 'SOLID', color: color }];
+        return JSON.stringify({ id: style.id, name: style.name });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      spinner.succeed(`Created paint style "${result.name}" ${chalk.dim(result.id)}`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('create-text <name>')
+  .description('Create a text style')
+  .option('--size <n>', 'Font size', '16')
+  .option('--weight <w>', 'Font weight/style', 'Regular')
+  .option('--font <f>', 'Font family', 'Inter')
+  .option('--description <text>', 'Style description')
+  .action(async (name, options) => {
+    checkConnection();
+    const spinner = ora(`Creating text style "${name}"...`).start();
+    try {
+      const size = parseFloat(options.size);
+      const weight = options.weight;
+      const font = options.font;
+      const desc = options.description || '';
+      const code = `(async () => {
+        const fontName = { family: ${JSON.stringify(font)}, style: ${JSON.stringify(weight)} };
+        await figma.loadFontAsync(fontName);
+        const style = figma.createTextStyle();
+        style.name = ${JSON.stringify(name)};
+        if (${JSON.stringify(desc)}) style.description = ${JSON.stringify(desc)};
+        style.fontName = fontName;
+        style.fontSize = ${size};
+        return JSON.stringify({ id: style.id, name: style.name, fontSize: style.fontSize, fontName: style.fontName });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      spinner.succeed(`Created text style "${result.name}" — ${result.fontName.family} ${result.fontName.style} ${result.fontSize}px ${chalk.dim(result.id)}`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('create-effect <name>')
+  .description('Create an effect style (drop shadow)')
+  .option('--blur <n>', 'Blur radius', '4')
+  .option('--x <n>', 'X offset', '0')
+  .option('--y <n>', 'Y offset', '4')
+  .option('--color <hex>', 'Shadow color', '#000000')
+  .option('--opacity <n>', 'Shadow opacity 0-1', '0.25')
+  .option('--description <text>', 'Style description')
+  .action(async (name, options) => {
+    checkConnection();
+    const spinner = ora(`Creating effect style "${name}"...`).start();
+    try {
+      const blur = parseFloat(options.blur);
+      const x = parseFloat(options.x);
+      const y = parseFloat(options.y);
+      const hex = options.color.replace('#', '');
+      const opacity = parseFloat(options.opacity);
+      const desc = options.description || '';
+      const code = `(async () => {
+        function hexToRgb(hex) {
+          hex = hex.replace('#', '');
+          return {
+            r: parseInt(hex.substr(0, 2), 16) / 255,
+            g: parseInt(hex.substr(2, 2), 16) / 255,
+            b: parseInt(hex.substr(4, 2), 16) / 255
+          };
+        }
+        const style = figma.createEffectStyle();
+        style.name = ${JSON.stringify(name)};
+        if (${JSON.stringify(desc)}) style.description = ${JSON.stringify(desc)};
+        const color = hexToRgb('${hex}');
+        style.effects = [{
+          type: 'DROP_SHADOW',
+          visible: true,
+          radius: ${blur},
+          offset: { x: ${x}, y: ${y} },
+          color: { ...color, a: ${opacity} },
+          blendMode: 'NORMAL',
+          spread: 0
+        }];
+        return JSON.stringify({ id: style.id, name: style.name });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      spinner.succeed(`Created effect style "${result.name}" ${chalk.dim(result.id)}`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('apply <styleId>')
+  .description('Apply a style to the current selection')
+  .action(async (styleId) => {
+    checkConnection();
+    const spinner = ora('Applying style...').start();
+    try {
+      const code = `(async () => {
+        const sel = figma.currentPage.selection;
+        if (sel.length === 0) return JSON.stringify({ error: 'No selection' });
+
+        const style = await figma.getStyleByIdAsync('${styleId}');
+        if (!style) return JSON.stringify({ error: 'Style not found: ${styleId}' });
+
+        const type = style.type;
+        let applied = 0;
+
+        for (const node of sel) {
+          try {
+            if (type === 'PAINT') {
+              if ('fillStyleId' in node) { node.fillStyleId = style.id; applied++; }
+            } else if (type === 'TEXT') {
+              if (node.type === 'TEXT') { node.textStyleId = style.id; applied++; }
+            } else if (type === 'EFFECT') {
+              if ('effectStyleId' in node) { node.effectStyleId = style.id; applied++; }
+            } else if (type === 'GRID') {
+              if ('gridStyleId' in node) { node.gridStyleId = style.id; applied++; }
+            }
+          } catch (e) { /* skip incompatible nodes */ }
+        }
+
+        return JSON.stringify({ type, styleName: style.name, applied, total: sel.length });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      if (result.error) { spinner.fail(result.error); return; }
+      spinner.succeed(`Applied ${result.type} style "${result.styleName}" to ${result.applied}/${result.total} node(s)`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+style
+  .command('delete <styleId>')
+  .description('Delete a style by ID')
+  .action(async (styleId) => {
+    checkConnection();
+    const spinner = ora('Deleting style...').start();
+    try {
+      const code = `(async () => {
+        const style = await figma.getStyleByIdAsync('${styleId}');
+        if (!style) return JSON.stringify({ error: 'Style not found: ${styleId}' });
+        const name = style.name;
+        const type = style.type;
+        style.remove();
+        return JSON.stringify({ name, type });
+      })()`;
+      const raw = await fastEval(code);
+      const result = JSON.parse(raw);
+      if (result.error) { spinner.fail(result.error); return; }
+      spinner.succeed(`Deleted ${result.type} style "${result.name}"`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
 program.parse();
