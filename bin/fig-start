@@ -612,11 +612,11 @@ for f in files:
         break
 " "$SELECTED_TITLE" 2>/dev/null)
 
-    RESOLVE_ARGS="--title \"$SELECTED_TITLE\""
-    [ -n "$SELECTED_FILE_KEY" ] && RESOLVE_ARGS="$RESOLVE_ARGS --file-key \"$SELECTED_FILE_KEY\""
-    [ -n "$SELECTED_FILE_URL" ] && RESOLVE_ARGS="$RESOLVE_ARGS --url \"$SELECTED_FILE_URL\""
+    resolve_cmd=(node "$CLI" project resolve --title "$SELECTED_TITLE")
+    [ -n "$SELECTED_FILE_KEY" ] && resolve_cmd+=(--file-key "$SELECTED_FILE_KEY")
+    [ -n "$SELECTED_FILE_URL" ] && resolve_cmd+=(--url "$SELECTED_FILE_URL")
 
-    PROJECT_DIR=$(eval node "$CLI" project resolve $RESOLVE_ARGS 2>/dev/null)
+    PROJECT_DIR=$("${resolve_cmd[@]}" 2>/dev/null)
 
     if [ -n "$PROJECT_DIR" ]; then
         export FIGMA_PROJECT_DIR="$PROJECT_DIR"

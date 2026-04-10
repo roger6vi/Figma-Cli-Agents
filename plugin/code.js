@@ -1,16 +1,29 @@
 /**
  * Figma CLI Bridge Plugin
  *
- * Safe Mode: Connects to CLI daemon via WebSocket
- * No debug port needed, no patching required.
+ * Safe Mode: Connects to CLI daemon via WebSocket with subprotocol token auth.
+ * Main thread owns figma.clientStorage; UI communicates via postMessage.
  */
 
-// Show minimal UI (needed for WebSocket connection)
-figma.showUI(__html__, {
-  width: 160,
-  height: 72,
-  position: { x: -9999, y: 9999 }  // Bottom-left (push to far left)
-});
+const PAIRING_SIZE = { width: 300, height: 190 };
+const STATUS_SIZE = { width: 180, height: 86 };
+
+figma.showUI(__html__, PAIRING_SIZE);
+
+function normalizeDaemonToken(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+async function sendStoredDaemonToken() {
+  const stored = normalizeDaemonToken(await figma.clientStorage.getAsync('daemonToken'));
+  if (stored) {
+    figma.ui.resize(STATUS_SIZE.width, STATUS_SIZE.height);
+    figma.ui.postMessage({ type: 'stored-token', token: stored });
+  } else {
+    figma.ui.resize(PAIRING_SIZE.width, PAIRING_SIZE.height);
+    figma.ui.postMessage({ type: 'pairing-required' });
+  }
+}
 
 // Execute code with auto-return and timeout protection
 async function executeCode(code, timeoutMs = 25000) {
@@ -50,6 +63,30 @@ async function executeCode(code, timeoutMs = 25000) {
 
 // Handle messages from UI (WebSocket bridge)
 figma.ui.onmessage = async (msg) => {
+  if (msg.type === 'request-stored-token') {
+    await sendStoredDaemonToken();
+    return;
+  }
+
+  if (msg.type === 'pair-token') {
+    const token = normalizeDaemonToken(msg.token);
+    if (!token) {
+      figma.ui.postMessage({ type: 'pairing-required' });
+      return;
+    }
+    await figma.clientStorage.setAsync('daemonToken', token);
+    figma.ui.resize(STATUS_SIZE.width, STATUS_SIZE.height);
+    figma.ui.postMessage({ type: 'pairing-saved', token });
+    return;
+  }
+
+  if (msg.type === 'auth-failed') {
+    await figma.clientStorage.deleteAsync('daemonToken');
+    figma.ui.resize(PAIRING_SIZE.width, PAIRING_SIZE.height);
+    figma.notify('Figma DS CLI pairing expired. Paste the current token.', { error: true });
+    return;
+  }
+
   // Single eval
   if (msg.type === 'eval') {
     try {
@@ -75,6 +112,7 @@ figma.ui.onmessage = async (msg) => {
   }
 
   if (msg.type === 'connected') {
+    figma.ui.resize(STATUS_SIZE.width, STATUS_SIZE.height);
     figma.notify('✓ Figma DS CLI connected', { timeout: 2000 });
   }
 

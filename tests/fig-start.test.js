@@ -32,4 +32,18 @@ describe('fig-start agent picker', () => {
   it('exports FIGMA_SAFE_MODE for env-based agents', () => {
     assert.match(figStart, /export FIGMA_SAFE_MODE="\$SAFE_MODE"/);
   });
+
+  it('resolves project directories with a bash array and no eval', () => {
+    const start = figStart.indexOf('# Step 3b: Resolve project directory for the selected file');
+    const end = figStart.indexOf('if [ -n "$PROJECT_DIR" ]', start);
+    assert.ok(start > -1, 'project-resolve section start not found');
+    assert.ok(end > start, 'project-resolve section end not found');
+
+    const block = figStart.slice(start, end);
+    assert.doesNotMatch(block, /\beval\b/);
+    assert.match(block, /resolve_cmd=\(node "\$CLI" project resolve --title "\$SELECTED_TITLE"\)/);
+    assert.match(block, /resolve_cmd\+=\(--file-key "\$SELECTED_FILE_KEY"\)/);
+    assert.match(block, /resolve_cmd\+=\(--url "\$SELECTED_FILE_URL"\)/);
+    assert.match(block, /PROJECT_DIR=\$\("\$\{resolve_cmd\[@\]\}" 2>\/dev\/null\)/);
+  });
 });

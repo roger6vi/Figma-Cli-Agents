@@ -10,6 +10,14 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { createInterface } from 'readline';
 import { homedir, tmpdir } from 'os';
+import {
+  createSecureTempFile,
+  ensureSecureConfigDir,
+  redactSecret,
+  safeConfigWrite,
+  safeExecFileSync,
+  safeHttpUrl,
+} from './security.js';
 import { FigJamClient } from './figjam-client.js';
 import { FigmaClient } from './figma-client.js';
 import { isPatched, patchFigma, unpatchFigma, getFigmaCommand, getCdpPort, getFigmaBinaryPath } from './figma-patch.js';
@@ -41,10 +49,8 @@ const DAEMON_TOKEN_FILE = join(homedir(), '.figma-ds-cli', '.daemon-token');
 
 // Generate and save a new session token for daemon authentication
 function generateDaemonToken() {
-  const configDir = join(homedir(), '.figma-ds-cli');
-  if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true });
   const token = randomBytes(32).toString('hex');
-  writeFileSync(DAEMON_TOKEN_FILE, token, { mode: 0o600 });
+  safeConfigWrite(DAEMON_TOKEN_FILE, token);
   return token;
 }
 
@@ -397,8 +403,10 @@ function prompt(question) {
 // Helper: Load config
 function loadConfig() {
   try {
+    ensureSecureConfigDir(CONFIG_DIR);
     if (existsSync(CONFIG_FILE)) {
-      return JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+      const raw = readFileSync(CONFIG_FILE, 'utf8').replace(/^\uFEFF/, '');
+      return JSON.parse(raw);
     }
   } catch {}
   return {};
@@ -406,8 +414,12 @@ function loadConfig() {
 
 // Helper: Save config
 function saveConfig(config) {
-  if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  ensureSecureConfigDir(CONFIG_DIR);
+  safeConfigWrite(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n');
+}
+
+function shouldRedactConfigKey(key) {
+  return /token|secret|password|apikey|apiKey|key/i.test(key);
 }
 
 // Singleton FigmaClient instance
@@ -441,15 +453,23 @@ function figmaEvalSync(code) {
       // For simple expressions and multi-statement code, just pass through
       // The plugin will add return to the last statement
       const payload = JSON.stringify({ action: 'eval', code: wrappedCode });
-      const payloadFile = join(tmpdir(), `figma-payload-${Date.now()}.json`);
-      writeFileSync(payloadFile, payload);
-      const daemonToken = getDaemonToken();
-      const tokenHeader = daemonToken ? ` -H "X-Daemon-Token: ${daemonToken}"` : '';
-      const result = execSync(
-        `curl -s -X POST http://127.0.0.1:${DAEMON_PORT}/exec -H "Content-Type: application/json"${tokenHeader} -d @"${payloadFile}"`,
-        { encoding: 'utf8', timeout: 60000 }
-      );
-      try { unlinkSync(payloadFile); } catch {}
+      const payloadTemp = createSecureTempFile('figma-payload', '.json');
+      let result;
+      try {
+        writeFileSync(payloadTemp.path, payload, { mode: 0o600 });
+        const daemonToken = getDaemonToken();
+        const curlArgs = [
+          '-s',
+          '-X', 'POST',
+          `http://127.0.0.1:${DAEMON_PORT}/exec`,
+          '-H', 'Content-Type: application/json',
+        ];
+        if (daemonToken) curlArgs.push('-H', `X-Daemon-Token: ${daemonToken}`);
+        curlArgs.push('-d', `@${payloadTemp.path}`);
+        result = safeExecFileSync('curl', curlArgs, { encoding: 'utf8', timeout: 60000 });
+      } finally {
+        payloadTemp.cleanup();
+      }
       if (!result || result.trim() === '') {
         throw new Error('Empty response from daemon');
       }
@@ -473,14 +493,14 @@ function figmaEvalSync(code) {
   }
 
   // Fallback: direct connection via temp script
-  const tempFile = join(tmpdir(), `figma-eval-${Date.now()}.mjs`);
-  const resultFile = join(tmpdir(), `figma-result-${Date.now()}.json`);
+  const evalTemp = createSecureTempFile('figma-eval', '.mjs');
+  const resultTemp = createSecureTempFile('figma-result', '.json');
 
-  // Use file:// URL for ESM import (cross-platform)
-  const clientUrl = pathToFileURL(join(process.cwd(), 'src/figma-client.js')).href;
-  const resultPath = resultFile.replace(/\\/g, '\\\\');
+  try {
+    // Use file:// URL for ESM import (cross-platform)
+    const clientUrl = pathToFileURL(join(process.cwd(), 'src/figma-client.js')).href;
 
-  const script = `
+    const script = `
     import { FigmaClient } from '${clientUrl}';
     import { writeFileSync } from 'fs';
 
@@ -489,28 +509,24 @@ function figmaEvalSync(code) {
         const client = new FigmaClient();
         await client.connect();
         const result = await client.eval(${JSON.stringify(code)});
-        writeFileSync('${resultPath}', JSON.stringify({ success: true, result }));
+        writeFileSync(${JSON.stringify(resultTemp.path)}, JSON.stringify({ success: true, result }));
         client.close();
       } catch (e) {
-        writeFileSync('${resultPath}', JSON.stringify({ success: false, error: e.message }));
+        writeFileSync(${JSON.stringify(resultTemp.path)}, JSON.stringify({ success: false, error: e.message }));
       }
     })();
   `;
 
-  writeFileSync(tempFile, script);
-  try {
-    execSync(`node "${tempFile}"`, { stdio: 'pipe', timeout: 60000 });
-    if (existsSync(resultFile)) {
-      const data = JSON.parse(readFileSync(resultFile, 'utf8'));
-      try { unlinkSync(tempFile); } catch {}
-      try { unlinkSync(resultFile); } catch {}
+    writeFileSync(evalTemp.path, script, { mode: 0o600 });
+    safeExecFileSync('node', [evalTemp.path], { stdio: 'pipe', timeout: 60000 });
+    if (existsSync(resultTemp.path)) {
+      const data = JSON.parse(readFileSync(resultTemp.path, 'utf8'));
       if (data.success) return data.result;
       throw new Error(data.error);
     }
-  } catch (e) {
-    try { unlinkSync(tempFile); } catch {}
-    try { unlinkSync(resultFile); } catch {}
-    throw e;
+  } finally {
+    evalTemp.cleanup();
+    resultTemp.cleanup();
   }
   return null;
 }
@@ -1120,6 +1136,12 @@ program
         daemonSpinner.fail('Daemon failed: ' + e.message);
         return;
       }
+
+      const pairingToken = getDaemonToken();
+      console.log(chalk.white.bold('\n  Pairing token for FigCli plugin:\n'));
+      console.log(chalk.black.bgYellow(`  ${pairingToken}  `));
+      console.log(chalk.gray('\n  Paste this token into the FigCli plugin window.'));
+      console.log(chalk.gray('  It is valid for this daemon session only; run connect --safe again to rotate it.\n'));
 
       // Show plugin setup instructions
       console.log(chalk.hex('#FF6B35')('\n  ┌─────────────────────────────────────────────────────┐'));
@@ -3266,57 +3288,60 @@ create
   .option('-n, --name <name>', 'Node name', 'Image')
   .option('--spacing <n>', 'Gap from other elements', '100')
   .action(async (url, options) => {
-    checkConnection();
     const spinner = ora('Loading image...').start();
 
-    const code = `
+    try {
+      const imageUrl = safeHttpUrl(url).href;
+      checkConnection();
+
+      const posX = options.x !== undefined ? Number.parseInt(options.x, 10) : null;
+      const posY = Number.parseInt(options.y, 10) || 0;
+      const spacing = Number.parseInt(options.spacing, 10) || 100;
+      const width = options.width ? Number.parseInt(options.width, 10) : null;
+      const height = options.height ? Number.parseInt(options.height, 10) : null;
+
+      const code = `
 (async () => {
   try {
-    // Smart positioning
     let smartX = 0;
-    if (${options.x === undefined}) {
+    if (${posX === null}) {
       figma.currentPage.children.forEach(n => {
         smartX = Math.max(smartX, n.x + (n.width || 0));
       });
-      smartX += ${options.spacing || 100};
+      smartX += ${spacing};
     } else {
-      smartX = ${options.x || 0};
+      smartX = ${posX ?? 0};
     }
 
-    // Create image from URL
-    const image = await figma.createImageAsync("${url}");
+    const image = await figma.createImageAsync(${JSON.stringify(imageUrl)});
     const { width, height } = await image.getSizeAsync();
 
-    // Calculate dimensions
-    let w = ${options.width || 'null'};
-    let h = ${options.height || 'null'};
+    let w = ${width ?? 'null'};
+    let h = ${height ?? 'null'};
     if (w && !h) h = Math.round(height * (w / width));
     if (h && !w) w = Math.round(width * (h / height));
     if (!w && !h) { w = width; h = height; }
 
-    // Create rectangle with image fill
     const rect = figma.createRectangle();
-    rect.name = "${options.name}";
+    rect.name = ${JSON.stringify(options.name)};
     rect.resize(w, h);
     rect.x = smartX;
-    rect.y = ${options.y};
+    rect.y = ${posY};
     rect.fills = [{ type: 'IMAGE', scaleMode: 'FILL', imageHash: image.hash }];
 
     figma.currentPage.selection = [rect];
     figma.viewport.scrollAndZoomIntoView([rect]);
-
-    return 'Image created: ' + w + 'x' + h + ' at (' + smartX + ', ${options.y})';
+    return 'Image created: ' + w + 'x' + h + ' at (' + smartX + ', ${posY})';
   } catch (e) {
     return 'Error: ' + e.message;
   }
-})()
-`;
+})()`;
 
-    try {
-      const result = figmaUse(`eval "${code.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, { silent: true });
+      const result = await fastEval(code);
       spinner.succeed('Image created from URL');
-      if (result) console.log(chalk.gray(result.trim()));
+      if (result) console.log(chalk.gray(String(result).trim()));
     } catch (e) {
+      process.exitCode = 1;
       spinner.fail('Failed to create image: ' + e.message);
     }
   });
@@ -3333,73 +3358,67 @@ program
   .option('-n, --name <name>', 'Node name', 'Screenshot')
   .option('--scale <n>', 'Scale factor (1 or 2 for retina)', '2')
   .action(async (url, options) => {
-    checkConnection();
-
     const spinner = ora('Taking screenshot of ' + url + '...').start();
+    const screenshotTemp = createSecureTempFile('figma-cli-screenshot', '.png');
 
     try {
-      const tempFile = join(tmpdir(), 'figma-cli-screenshot.png');
+      const targetUrl = safeHttpUrl(url).href;
+      checkConnection();
 
-      // Build capture-website command
-      let cmd = `npx --yes capture-website-cli "${url}" --output="${tempFile}" --width=${options.width} --height=${options.height} --scale-factor=${options.scale}`;
-      if (options.full) cmd += ' --full-page';
-      cmd += ' --overwrite';
+      const captureArgs = [
+        '--yes',
+        'capture-website-cli',
+        targetUrl,
+        `--output=${screenshotTemp.path}`,
+        `--width=${Number.parseInt(options.width, 10)}`,
+        `--height=${Number.parseInt(options.height, 10)}`,
+        `--scale-factor=${Number.parseInt(options.scale, 10)}`,
+      ];
+      if (options.full) captureArgs.push('--full-page');
+      captureArgs.push('--overwrite');
 
-      // Take screenshot
-      execSync(cmd, { stdio: 'ignore', timeout: 60000 });
+      safeExecFileSync('npx', captureArgs, { stdio: 'ignore', timeout: 60000 });
 
-      if (!existsSync(tempFile)) {
-        throw new Error('Screenshot failed');
-      }
+      if (!existsSync(screenshotTemp.path)) throw new Error('Screenshot failed');
 
       spinner.text = 'Importing into Figma...';
 
-      // Read as base64
-      const buffer = readFileSync(tempFile);
-      const base64 = buffer.toString('base64');
+      const base64 = readFileSync(screenshotTemp.path).toString('base64');
       const dataUrl = 'data:image/png;base64,' + base64;
 
-      // Import into Figma with smart positioning
       const code = `
 (async () => {
   try {
-    // Smart positioning
     let smartX = 0;
     figma.currentPage.children.forEach(n => {
       smartX = Math.max(smartX, n.x + (n.width || 0));
     });
     smartX += 100;
 
-    // Create image from base64
-    const image = await figma.createImageAsync("${dataUrl}");
+    const image = await figma.createImageAsync(${JSON.stringify(dataUrl)});
     const { width, height } = await image.getSizeAsync();
-
-    // Create rectangle with image fill
     const rect = figma.createRectangle();
-    rect.name = "${options.name} - ${url}";
+    rect.name = ${JSON.stringify(`${options.name} - ${targetUrl}`)};
     rect.resize(width, height);
     rect.x = smartX;
     rect.y = 0;
     rect.fills = [{ type: 'IMAGE', scaleMode: 'FILL', imageHash: image.hash }];
-
     figma.currentPage.selection = [rect];
     figma.viewport.scrollAndZoomIntoView([rect]);
-
     return 'Screenshot imported: ' + width + 'x' + height;
   } catch (e) {
     return 'Error: ' + e.message;
   }
-})()
-`;
+})()`;
 
-      const result = figmaUse(`eval "${code.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, { silent: true });
+      const result = await fastEval(code);
       spinner.succeed('Screenshot imported into Figma');
-      if (result) console.log(chalk.gray(result.trim()));
-
-      // Cleanup
-      try { unlinkSync(tempFile); } catch {}
+      if (result) console.log(chalk.gray(String(result).trim()));
     } catch (e) {
+      process.exitCode = 1;
       spinner.fail('Failed: ' + e.message);
+    } finally {
+      screenshotTemp.cleanup();
     }
   });
 
@@ -3414,16 +3433,24 @@ program
   .action(async (url, options) => {
     const spinner = ora('Analyzing ' + url + ' with Playwright...').start();
 
+    const scriptTemp = createSecureTempFile('figma-analyze-url', '.cjs');
+    const screenshotTemp = options.screenshot ? createSecureTempFile('figma-analyze-screenshot', '.png') : null;
+
     try {
-      // Create analysis script
+      const targetUrl = safeHttpUrl(url).href;
+      const viewportWidth = Number.parseInt(options.width, 10);
+      const viewportHeight = Number.parseInt(options.height, 10);
+
       const script = `
 const { chromium } = require('playwright');
+const targetUrl = ${JSON.stringify(targetUrl)};
+const screenshotPath = ${JSON.stringify(screenshotTemp?.path || null)};
 
 (async () => {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: ${options.width}, height: ${options.height} } });
+  const page = await browser.newPage({ viewport: { width: ${viewportWidth}, height: ${viewportHeight} } });
 
-  await page.goto('${url}', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(3000);
 
   const data = await page.evaluate(() => {
@@ -3476,32 +3503,30 @@ const { chromium } = require('playwright');
   });
 
   console.log(JSON.stringify(data, null, 2));
-  ${options.screenshot ? `await page.screenshot({ path: '${join(tmpdir(), 'analyze-screenshot.png').replace(/\\/g, '\\\\')}' });` : ''}
+  if (screenshotPath) await page.screenshot({ path: screenshotPath });
   await browser.close();
 })();
 `;
 
-      // Write and run script
-      const scriptPath = join(tmpdir(), 'figma-analyze-url.js');
-      writeFileSync(scriptPath, script);
-
-      const result = execSync(`node "${scriptPath}"`, {
+      writeFileSync(scriptTemp.path, script, { mode: 0o600 });
+      const result = safeExecFileSync('node', [scriptTemp.path], {
         encoding: 'utf8',
         timeout: 90000,
-        maxBuffer: 10 * 1024 * 1024
+        maxBuffer: 10 * 1024 * 1024,
       });
 
       spinner.succeed('Page analyzed');
       console.log(result);
 
-      if (options.screenshot) {
-        console.log(chalk.gray('Screenshot saved: /tmp/analyze-screenshot.png'));
+      if (screenshotTemp) {
+        console.log(chalk.gray(`Screenshot saved: ${screenshotTemp.path}`));
       }
-
-      // Cleanup
-      try { unlinkSync(scriptPath); } catch {}
     } catch (e) {
+      process.exitCode = 1;
       spinner.fail('Analysis failed: ' + e.message);
+    } finally {
+      scriptTemp.cleanup();
+      // Intentionally do not cleanup screenshotTemp when requested; that is the user-visible output.
     }
   });
 
@@ -3515,20 +3540,28 @@ program
   .option('-h, --height <n>', 'Viewport height', '900')
   .option('--name <name>', 'Frame name', 'Recreated Page')
   .action(async (url, options) => {
-    checkConnection();
-
     const spinner = ora('Analyzing ' + url + ' with Playwright...').start();
 
+    const scriptTemp = createSecureTempFile('figma-recreate-analyze', '.cjs');
+
     try {
+      const targetUrl = safeHttpUrl(url).href;
+      checkConnection();
+
+      const viewportWidth = Number.parseInt(options.width, 10);
+      const viewportHeight = Number.parseInt(options.height, 10);
+      const frameName = options.name;
+
       // Step 1: Analyze with Playwright
       const analyzeScript = `
 const { chromium } = require('playwright');
+const targetUrl = ${JSON.stringify(targetUrl)};
 
 (async () => {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: ${options.width}, height: ${options.height} } });
+  const page = await browser.newPage({ viewport: { width: ${viewportWidth}, height: ${viewportHeight} } });
 
-  await page.goto('${url}', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(3000);
 
   const data = await page.evaluate(() => {
@@ -3640,13 +3673,12 @@ const { chromium } = require('playwright');
 })();
 `;
 
-      const scriptPath = join(tmpdir(), 'figma-recreate-analyze.js');
-      writeFileSync(scriptPath, analyzeScript);
+      writeFileSync(scriptTemp.path, analyzeScript, { mode: 0o600 });
 
-      const analysisResult = execSync(`node "${scriptPath}"`, {
+      const analysisResult = safeExecFileSync('node', [scriptTemp.path], {
         encoding: 'utf8',
         timeout: 90000,
-        maxBuffer: 10 * 1024 * 1024
+        maxBuffer: 10 * 1024 * 1024,
       });
 
       const data = JSON.parse(analysisResult);
@@ -3759,8 +3791,8 @@ ${[...fonts].map(f => {
 
   // Main desktop frame
   const main = figma.createFrame();
-  main.name = "${options.name}";
-  main.resize(${options.width}, ${options.height});
+  main.name = ${JSON.stringify(frameName)};
+  main.resize(${viewportWidth}, ${viewportHeight});
   main.fills = [{ type: "SOLID", color: ${hexToRgb(data.bodyBg)} }];
   main.x = smartX;
   main.y = 0;
@@ -3774,13 +3806,13 @@ ${[...fonts].map(f => {
         const fontStyle = getFontStyle(el.fontWeight, el.fontFamily);
 
         if (el.type === 'heading' || el.type === 'text') {
-          const text = (el.text || '').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+          const text = el.text || '';
           if (!text) return;
           figmaCode += `
-  // ${el.type}: ${text.slice(0, 30)}
+  // ${el.type}: ${text.slice(0, 30).replace(/`/g, "'")}
   const t${i} = figma.createText();
   t${i}.fontName = getFont("${fontFamily}", "${fontStyle}");
-  t${i}.characters = "${text}";
+  t${i}.characters = ${JSON.stringify(text)};
   t${i}.fontSize = ${el.fontSize || 16};
   t${i}.fills = [{ type: "SOLID", color: ${hexToRgb(el.color)} }];
   t${i}.x = ${el.x};
@@ -3788,12 +3820,12 @@ ${[...fonts].map(f => {
   main.appendChild(t${i});
 `;
         } else if (el.type === 'button') {
-          const text = (el.text || '').replace(/"/g, '\\"').replace(/\n/g, ' ').trim();
+          const text = (el.text || '').trim();
           if (!text) return;
           figmaCode += `
-  // Button: ${text.slice(0, 30)}
+  // Button: ${text.slice(0, 30).replace(/`/g, "'")}
   const btn${i} = figma.createFrame();
-  btn${i}.name = "${text.slice(0, 20)}";
+  btn${i}.name = ${JSON.stringify(text.slice(0, 20))};
   btn${i}.resize(${el.w}, ${el.h});
   btn${i}.x = ${el.x};
   btn${i}.y = ${el.y};
@@ -3805,14 +3837,14 @@ ${[...fonts].map(f => {
   btn${i}.counterAxisAlignItems = "CENTER";
   const btnTxt${i} = figma.createText();
   btnTxt${i}.fontName = getFont("${fontFamily}", "${fontStyle}");
-  btnTxt${i}.characters = "${text}";
+  btnTxt${i}.characters = ${JSON.stringify(text)};
   btnTxt${i}.fontSize = ${el.fontSize || 14};
   btnTxt${i}.fills = [{ type: "SOLID", color: ${hexToRgb(el.color)} }];
   btn${i}.appendChild(btnTxt${i});
   main.appendChild(btn${i});
 `;
         } else if (el.type === 'input') {
-          const placeholder = (el.placeholder || 'Enter text...').replace(/"/g, '\\"');
+          const placeholder = el.placeholder || 'Enter text...';
           figmaCode += `
   // Input
   const input${i} = figma.createFrame();
@@ -3828,7 +3860,7 @@ ${[...fonts].map(f => {
   input${i}.paddingLeft = ${el.paddingLeft || 12};
   const ph${i} = figma.createText();
   ph${i}.fontName = getFont("${fontFamily}", "Regular");
-  ph${i}.characters = "${placeholder}";
+  ph${i}.characters = ${JSON.stringify(placeholder)};
   ph${i}.fontSize = ${el.fontSize || 14};
   ph${i}.fills = [{ type: "SOLID", color: { r: 0.6, g: 0.6, b: 0.6 } }];
   input${i}.appendChild(ph${i});
@@ -3839,7 +3871,7 @@ ${[...fonts].map(f => {
 
       figmaCode += `
   figma.viewport.scrollAndZoomIntoView([main]);
-  return "Recreated ${data.elements.length} elements from ${url}";
+  return ${JSON.stringify(`Recreated ${data.elements.length} elements from ${targetUrl}`)};
 })()`;
 
       // Step 3: Execute via daemon (fast) or direct connection (fallback)
@@ -3848,14 +3880,14 @@ ${[...fonts].map(f => {
 
       spinner.succeed('Page recreated in Figma');
       console.log(chalk.green('✓ ') + chalk.white(`Created ${data.elements.length} elements`));
-      console.log(chalk.gray(`  Frame: "${options.name}" (${options.width}x${options.height})`));
-      console.log(chalk.gray(`  Source: ${url}`));
-
-      // Cleanup
-      try { unlinkSync(scriptPath); } catch {}
+      console.log(chalk.gray(`  Frame: "${frameName}" (${viewportWidth}x${viewportHeight})`));
+      console.log(chalk.gray(`  Source: ${targetUrl}`));
     } catch (e) {
+      process.exitCode = 1;
       spinner.fail('Recreation failed: ' + e.message);
       if (process.env.DEBUG) console.error(e);
+    } finally {
+      scriptTemp.cleanup();
     }
   });
 
@@ -3891,22 +3923,21 @@ program
 
     const spinner = ora('Exporting selected image...').start();
 
+    const tempInput = createSecureTempFile('figma-cli-removebg-input', '.png');
     try {
-      const tempInput = join(tmpdir(), 'figma-cli-removebg-input.png');
-
       // Export selected node as PNG
-      let exportCmd = 'export png --scale 2 --output "' + tempInput + '"';
+      let exportCmd = 'export png --scale 2 --output "' + tempInput.path + '"';
       if (nodeId) exportCmd += ' --node "' + nodeId + '"';
       const exportResult = figmaUse(exportCmd, { silent: true });
 
-      if (!existsSync(tempInput)) {
+      if (!existsSync(tempInput.path)) {
         throw new Error('Export failed. Select an image or frame first.');
       }
 
       spinner.text = 'Removing background via remove.bg...';
 
       // Read image and send to Remove.bg API
-      const imageBuffer = readFileSync(tempInput);
+      const imageBuffer = readFileSync(tempInput.path);
       const base64Image = imageBuffer.toString('base64');
 
       const response = await fetch('https://api.remove.bg/v1.0/removebg', {
@@ -3973,10 +4004,10 @@ program
         if (result) console.log(chalk.gray(result.trim()));
       }
 
-      // Cleanup
-      try { unlinkSync(tempInput); } catch {}
     } catch (e) {
       spinner.fail('Failed: ' + e.message);
+    } finally {
+      tempInput.cleanup();
     }
   });
 
@@ -3993,7 +4024,8 @@ configCmd
     const config = loadConfig();
     config[key] = value;
     saveConfig(config);
-    console.log(chalk.green('✓ Config saved: ') + chalk.gray(key + ' = ' + value.substring(0, 10) + '...'));
+    const displayValue = shouldRedactConfigKey(key) ? redactSecret(value) : value;
+    console.log(chalk.green('✓ Config saved: ') + chalk.gray(`${key} = ${displayValue}`));
   });
 
 configCmd
