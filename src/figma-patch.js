@@ -10,7 +10,8 @@ import { execSync } from 'child_process';
 import {
   getAsarPath as platformGetAsarPath,
   getFigmaBinaryPath as platformGetFigmaBinaryPath,
-  getFigmaCommand as platformGetFigmaCommand
+  getFigmaCommand as platformGetFigmaCommand,
+  getDesktopAppLabel
 } from './platform.js';
 
 // Fixed CDP port (figma-use has 9222 hardcoded)
@@ -112,8 +113,9 @@ export function patchFigma() {
 
   // On macOS, re-sign the app
   if (process.platform === 'darwin') {
+    const appPath = `/Applications/${getDesktopAppLabel()}.app`;
     try {
-      execSync('codesign --force --deep --sign - /Applications/Figma.app', { stdio: 'ignore' });
+      execSync(`codesign --force --deep --sign - ${JSON.stringify(appPath)}`, { stdio: 'ignore' });
     } catch {
       // Codesign might fail but patch might still work
     }
@@ -149,8 +151,9 @@ export function unpatchFigma() {
 
   // On macOS, re-sign the app
   if (process.platform === 'darwin') {
+    const appPath = `/Applications/${getDesktopAppLabel()}.app`;
     try {
-      execSync('codesign --force --deep --sign - /Applications/Figma.app', { stdio: 'ignore' });
+      execSync(`codesign --force --deep --sign - ${JSON.stringify(appPath)}`, { stdio: 'ignore' });
     } catch {
       // Codesign might fail but unpatch might still work
     }
