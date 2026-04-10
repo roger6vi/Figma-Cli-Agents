@@ -9,6 +9,40 @@ import { join } from 'path';
 
 const PLATFORM = process.platform;
 
+// --- Desktop app selection (Figma stable vs Figma Beta) ---
+// fig-start sets FIGMA_DESKTOP_APP=stable|beta before launching agents.
+// index.js also reads desktopApp from config and sets the env var.
+
+/**
+ * Get the selected desktop app key ('stable' or 'beta')
+ */
+export function getSelectedDesktopApp() {
+  const raw = (process.env.FIGMA_DESKTOP_APP || 'stable').toLowerCase();
+  return raw === 'beta' || raw === 'figma beta' || raw === 'figma-beta' ? 'beta' : 'stable';
+}
+
+/**
+ * Get the display label for the selected desktop app
+ */
+export function getDesktopAppLabel() {
+  return getSelectedDesktopApp() === 'beta' ? 'Figma Beta' : 'Figma';
+}
+
+/**
+ * Get the process name for the selected desktop app (for pkill/pgrep/taskkill)
+ */
+export function getDesktopAppProcessName() {
+  return getSelectedDesktopApp() === 'beta' ? 'Figma Beta' : 'Figma';
+}
+
+/**
+ * Get the macOS Info.plist path for the selected desktop app (version detection)
+ */
+export function getDesktopAppVersionPlistPath() {
+  const appName = getDesktopAppLabel();
+  return `/Applications/${appName}.app/Contents/Info.plist`;
+}
+
 // --- Null device ---
 export const nullDevice = PLATFORM === 'win32' ? 'NUL' : '/dev/null';
 
@@ -67,7 +101,7 @@ export function sleepAfterStop() {
 // --- Start Figma ---
 export function startFigmaApp(figmaPath, port) {
   if (PLATFORM === 'darwin') {
-    execSync(`open -a Figma --args --remote-debugging-port=${port}`, { stdio: 'pipe' });
+    execSync(`open -a ${JSON.stringify(getDesktopAppLabel())} --args --remote-debugging-port=${port}`, { stdio: 'pipe' });
   } else {
     spawn(figmaPath, [`--remote-debugging-port=${port}`], { detached: true, stdio: 'ignore' }).unref();
   }
@@ -77,7 +111,8 @@ export function startFigmaApp(figmaPath, port) {
 export function killFigmaApp() {
   try {
     if (PLATFORM === 'darwin') {
-      execSync('pkill -x Figma 2>/dev/null || true', { stdio: 'pipe' });
+      const processName = getDesktopAppProcessName();
+      execSync(`pkill -x ${JSON.stringify(processName)} 2>/dev/null || true`, { stdio: 'pipe' });
     } else if (PLATFORM === 'win32') {
       execSync('taskkill /IM Figma.exe /F 2>nul', { stdio: 'pipe' });
     } else {
@@ -143,20 +178,21 @@ if (PLATFORM === 'win32') {
   };
 }
 
-const ASAR_PATHS = {
-  darwin: '/Applications/Figma.app/Contents/Resources/app.asar',
-  linux: '/opt/figma/resources/app.asar'
-};
-
 export function getAsarPath() {
   if (PLATFORM === 'win32') return findWindowsFigmaPath();
-  return ASAR_PATHS[PLATFORM] || null;
+  if (PLATFORM === 'darwin') {
+    const appName = getDesktopAppLabel();
+    return `/Applications/${appName}.app/Contents/Resources/app.asar`;
+  }
+  return '/opt/figma/resources/app.asar';
 }
 
 export function getFigmaBinaryPath() {
   switch (PLATFORM) {
-    case 'darwin':
-      return '/Applications/Figma.app/Contents/MacOS/Figma';
+    case 'darwin': {
+      const appName = getDesktopAppLabel();
+      return `/Applications/${appName}.app/Contents/MacOS/${appName}`;
+    }
     case 'win32':
       return findWindowsFigmaExe() || `${process.env.LOCALAPPDATA}\\Figma\\Figma.exe`;
     case 'linux':
@@ -168,8 +204,10 @@ export function getFigmaBinaryPath() {
 
 export function getFigmaCommand(port = 9222) {
   switch (PLATFORM) {
-    case 'darwin':
-      return `open -a Figma --args --remote-debugging-port=${port}`;
+    case 'darwin': {
+      const appName = getDesktopAppLabel();
+      return `open -a ${JSON.stringify(appName)} --args --remote-debugging-port=${port}`;
+    }
     case 'win32': {
       const exePath = findWindowsFigmaExe();
       if (exePath) return `"${exePath}" --remote-debugging-port=${port}`;
@@ -185,7 +223,8 @@ export function getFigmaCommand(port = 9222) {
 // --- Doctor helpers ---
 export function getFigmaVersion() {
   if (PLATFORM === 'darwin') {
-    return execSync('defaults read /Applications/Figma.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null', { encoding: 'utf8' }).trim();
+    const plistPath = getDesktopAppVersionPlistPath();
+    return execSync(`defaults read ${JSON.stringify(plistPath)} CFBundleShortVersionString 2>/dev/null`, { encoding: 'utf8' }).trim();
   } else if (PLATFORM === 'win32') {
     return execSync('powershell -command "(Get-Item \\"$env:LOCALAPPDATA\\Figma\\Figma.exe\\").VersionInfo.ProductVersion" 2>nul', { encoding: 'utf8' }).trim() || 'unknown';
   }
@@ -193,8 +232,12 @@ export function getFigmaVersion() {
 }
 
 export function isFigmaRunning() {
-  if (PLATFORM === 'darwin' || PLATFORM === 'linux') {
-    const ps = execSync('pgrep -f Figma 2>/dev/null || true', { encoding: 'utf8' });
+  if (PLATFORM === 'darwin') {
+    const processName = getDesktopAppProcessName();
+    const ps = execSync(`pgrep -f ${JSON.stringify(processName)} 2>/dev/null || true`, { encoding: 'utf8' });
+    return ps.trim().length > 0;
+  } else if (PLATFORM === 'linux') {
+    const ps = execSync('pgrep -f figma 2>/dev/null || true', { encoding: 'utf8' });
     return ps.trim().length > 0;
   } else if (PLATFORM === 'win32') {
     const ps = execSync('tasklist /FI "IMAGENAME eq Figma.exe" 2>nul', { encoding: 'utf8' });
