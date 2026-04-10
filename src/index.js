@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { execSync, spawn } from 'child_process';
 import { randomBytes } from 'crypto';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, readdirSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { createInterface } from 'readline';
@@ -297,6 +297,88 @@ const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8
 
 const CONFIG_DIR = join(homedir(), '.figma-ds-cli');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+const PROJECTS_DIR = join(CONFIG_DIR, 'projects');
+const GLOBAL_SKILLS_DIR = join(CONFIG_DIR, 'skills');
+
+// ── Project isolation helpers ──
+
+function slugify(title) {
+  return title
+    .replace(/\s*[–-]\s*Figma$/i, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function getProjectDir() {
+  return process.env.FIGMA_PROJECT_DIR || null;
+}
+
+function createOrGetProjectDir(title, fileKey, url) {
+  const slug = slugify(title);
+
+  // Try to find existing project by fileKey
+  if (fileKey && existsSync(PROJECTS_DIR)) {
+    const entries = readdirSync(PROJECTS_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = join(PROJECTS_DIR, entry.name, 'project.json');
+      if (existsSync(manifestPath)) {
+        try {
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+          if (manifest.fileKey === fileKey) {
+            if (manifest.title !== title) {
+              manifest.title = title;
+              writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+            }
+            return join(PROJECTS_DIR, entry.name);
+          }
+        } catch {}
+      }
+    }
+  }
+
+  // Avoid slug collisions
+  let projectDir = join(PROJECTS_DIR, slug);
+  if (existsSync(projectDir)) {
+    const manifestPath = join(projectDir, 'project.json');
+    if (existsSync(manifestPath)) {
+      try {
+        const existing = JSON.parse(readFileSync(manifestPath, 'utf8'));
+        if (existing.fileKey && fileKey && existing.fileKey !== fileKey) {
+          let counter = 2;
+          while (existsSync(join(PROJECTS_DIR, `${slug}-${counter}`))) counter++;
+          projectDir = join(PROJECTS_DIR, `${slug}-${counter}`);
+        } else {
+          if (existing.title !== title) {
+            existing.title = title;
+            writeFileSync(manifestPath, JSON.stringify(existing, null, 2));
+          }
+          return projectDir;
+        }
+      } catch {}
+    }
+  }
+
+  // Create new project directory
+  mkdirSync(join(projectDir, 'scripts'), { recursive: true });
+  mkdirSync(join(projectDir, 'exports'), { recursive: true });
+  mkdirSync(join(projectDir, 'skills'), { recursive: true });
+
+  const manifest = {
+    title,
+    slug,
+    fileKey: fileKey || null,
+    url: url || null,
+    createdAt: new Date().toISOString()
+  };
+  writeFileSync(join(projectDir, 'project.json'), JSON.stringify(manifest, null, 2));
+
+  return projectDir;
+}
 
 const program = new Command();
 
@@ -9402,6 +9484,128 @@ page
     } catch (err) {
       spinner.fail('Failed to create page: ' + err.message);
     }
+  });
+
+// ── Project management ──
+
+const projectCmd = program
+  .command('project')
+  .description('Manage per-file project directories');
+
+projectCmd
+  .command('resolve')
+  .description('Resolve or create project directory for a Figma file')
+  .requiredOption('--title <title>', 'Figma file title')
+  .option('--file-key <key>', 'Figma file key')
+  .option('--url <url>', 'Figma file URL')
+  .action((options) => {
+    const dir = createOrGetProjectDir(options.title, options.fileKey, options.url);
+    process.stdout.write(dir);
+  });
+
+projectCmd
+  .command('list')
+  .description('List all project directories')
+  .action(() => {
+    if (!existsSync(PROJECTS_DIR)) {
+      console.log(chalk.gray('No projects yet.'));
+      return;
+    }
+    const entries = readdirSync(PROJECTS_DIR, { withFileTypes: true });
+    let found = false;
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = join(PROJECTS_DIR, entry.name, 'project.json');
+      if (!existsSync(manifestPath)) continue;
+      try {
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+        found = true;
+        console.log(chalk.bold(manifest.title) + chalk.gray(` (${entry.name})`));
+        if (manifest.url) console.log(chalk.gray(`  ${manifest.url}`));
+        console.log(chalk.gray(`  Created: ${manifest.createdAt}`));
+      } catch {}
+    }
+    if (!found) console.log(chalk.gray('No projects yet.'));
+  });
+
+projectCmd
+  .command('info')
+  .description('Show current project info')
+  .action(() => {
+    const dir = getProjectDir();
+    if (!dir) {
+      console.log(chalk.gray('No project context. Run fig-start to select a file.'));
+      return;
+    }
+    const manifestPath = join(dir, 'project.json');
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      console.log(chalk.bold('Project: ') + manifest.title);
+      console.log(chalk.gray('Directory: ') + dir);
+      if (manifest.url) console.log(chalk.gray('URL: ') + manifest.url);
+      console.log(chalk.gray('Created: ') + manifest.createdAt);
+    } else {
+      console.log(chalk.yellow('Project directory exists but has no manifest: ') + dir);
+    }
+  });
+
+// ── Skills management ──
+
+const skillsCmd = program
+  .command('skills')
+  .description('Manage skills (instructions and scripts for AI agents)');
+
+skillsCmd
+  .command('list')
+  .description('List all available skills (global + project)')
+  .action(() => {
+    console.log(chalk.bold('Global skills:'));
+    if (existsSync(GLOBAL_SKILLS_DIR)) {
+      const files = readdirSync(GLOBAL_SKILLS_DIR).filter(f => f.endsWith('.md') || f.endsWith('.js'));
+      if (files.length) {
+        files.forEach(f => console.log('  ' + f));
+      } else {
+        console.log(chalk.gray('  (none)'));
+      }
+    } else {
+      console.log(chalk.gray('  (none) — create files in ~/.figma-ds-cli/skills/'));
+    }
+
+    const projectDir = getProjectDir();
+    if (projectDir) {
+      const projectSkillsDir = join(projectDir, 'skills');
+      console.log(chalk.bold('\nProject skills:'));
+      if (existsSync(projectSkillsDir)) {
+        const files = readdirSync(projectSkillsDir).filter(f => f.endsWith('.md') || f.endsWith('.js'));
+        if (files.length) {
+          files.forEach(f => console.log('  ' + f));
+        } else {
+          console.log(chalk.gray('  (none)'));
+        }
+      } else {
+        console.log(chalk.gray('  (none)'));
+      }
+    }
+  });
+
+skillsCmd
+  .command('show <name>')
+  .description('Show a skill file content')
+  .action((name) => {
+    const filename = name.endsWith('.md') || name.endsWith('.js') ? name : name + '.md';
+    const searchPaths = [];
+    const projectDir = getProjectDir();
+    if (projectDir) searchPaths.push(join(projectDir, 'skills'));
+    searchPaths.push(GLOBAL_SKILLS_DIR);
+
+    for (const dir of searchPaths) {
+      const filePath = join(dir, filename);
+      if (existsSync(filePath)) {
+        console.log(readFileSync(filePath, 'utf8'));
+        return;
+      }
+    }
+    console.log(chalk.red('Skill not found: ' + name));
   });
 
 program.parse();
