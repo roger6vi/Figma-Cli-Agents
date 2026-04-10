@@ -22,6 +22,7 @@ import { FigJamClient } from './figjam-client.js';
 import { FigmaClient } from './figma-client.js';
 import { isPatched, patchFigma, unpatchFigma, getFigmaCommand, getCdpPort, getFigmaBinaryPath } from './figma-patch.js';
 import { listComponents, getComponent, getAllComponents, VISUAL_COMPONENTS } from './shadcn.js';
+import { hexToRgb } from './color-utils.js';
 import { listBlocks, getBlock } from './blocks/index.js';
 import {
   nullDevice, killPort, getPortPid, sleepAfterStop,
@@ -148,7 +149,7 @@ async function daemonExec(action, data = {}, timeoutMs = 90000) {
     const response = await fetch(`http://localhost:${DAEMON_PORT}/exec`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ action, ...data }),
+      body: JSON.stringify({ action, ...data, timeout: timeoutMs }),
       signal: AbortSignal.timeout(timeoutMs)
     });
 
@@ -315,7 +316,7 @@ const GLOBAL_SKILLS_DIR = join(CONFIG_DIR, 'skills');
 // ── Project isolation helpers ──
 
 function slugify(title) {
-  return title
+  const slug = title
     .replace(/\s*[–-]\s*Figma$/i, '')
     .trim()
     .toLowerCase()
@@ -323,6 +324,8 @@ function slugify(title) {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+  // Fallback for non-ASCII-only titles that normalize to empty string
+  return slug || `untitled-${randomBytes(4).toString('hex')}`;
 }
 
 function getProjectDir() {
@@ -714,25 +717,7 @@ function isFigmaPatched() {
 }
 
 // Helper: Hex to Figma RGB (handles both #RGB and #RRGGBB)
-function hexToRgb(hex) {
-  // Remove # if present
-  hex = hex.replace(/^#/, '');
-
-  // Expand 3-char hex to 6-char
-  if (hex.length === 3) {
-    hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-  }
-
-  const result = /^([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) {
-    throw new Error(`Invalid hex color: #${hex}`);
-  }
-  return {
-    r: parseInt(result[1], 16) / 255,
-    g: parseInt(result[2], 16) / 255,
-    b: parseInt(result[3], 16) / 255
-  };
-}
+// hexToRgb is imported from ./color-utils.js
 
 // Helper: Check if value is a variable reference (var:name)
 function isVarRef(value) {
@@ -1329,8 +1314,8 @@ const variables = program
 variables
   .command('list')
   .description('List all variables')
-  .action(() => {
-    checkConnection();
+  .action(async () => {
+    await checkConnection();
     figmaUse('variable list');
   });
 
@@ -1340,8 +1325,8 @@ variables
   .requiredOption('-c, --collection <id>', 'Collection ID or name')
   .requiredOption('-t, --type <type>', 'Type: COLOR, FLOAT, STRING, BOOLEAN')
   .option('-v, --value <value>', 'Initial value')
-  .action((name, options) => {
-    checkConnection();
+  .action(async (name, options) => {
+    await checkConnection();
     const type = options.type.toUpperCase();
     const code = `(async () => {
 const cols = await figma.variables.getLocalVariableCollectionsAsync();
@@ -1374,8 +1359,8 @@ return 'Created ${type.toLowerCase()} variable: ${name}';
 variables
   .command('find <pattern>')
   .description('Find variables by name pattern')
-  .action((pattern) => {
-    checkConnection();
+  .action(async (pattern) => {
+    await checkConnection();
     figmaUse(`variable find "${pattern}"`);
   });
 
@@ -1383,7 +1368,7 @@ variables
   .command('visualize [collection]')
   .description('Create color swatches on canvas (shadcn-style layout)')
   .action(async (collection, options) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Creating color palette...').start();
 
     const code = `(async () => {
@@ -1576,8 +1561,8 @@ variables
   .command('create-batch <json>')
   .description('Create multiple variables at once (faster than individual calls)')
   .requiredOption('-c, --collection <id>', 'Collection ID or name')
-  .action((json, options) => {
-    checkConnection();
+  .action(async (json, options) => {
+    await checkConnection();
     let vars;
     try {
       vars = JSON.parse(json);
@@ -1626,8 +1611,8 @@ variables
   .command('delete-all')
   .description('Delete all local variables and collections')
   .option('-c, --collection <name>', 'Only delete variables in this collection')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     const spinner = ora('Deleting variables...').start();
 
     const filterCode = options.collection
@@ -1665,7 +1650,7 @@ variables
   .command('alias <variableId> <targetVariableId>')
   .description('Make a variable alias another variable')
   .action(async (variableId, targetVariableId) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Creating variable alias...').start();
     try {
       const code = `(async () => {
@@ -1696,7 +1681,7 @@ variables
   .command('bind-prop <nodeId> <propName> <variableId>')
   .description('Bind a component instance property to a variable')
   .action(async (nodeId, propName, variableId) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Binding property to variable...').start();
     try {
       const code = `(async () => {
@@ -1724,7 +1709,7 @@ variables
   .command('extend <collectionKey> <name>')
   .description('Extend a library collection locally')
   .action(async (collectionKey, name) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Extending library collection...').start();
     try {
       const code = `(async () => {
@@ -1746,7 +1731,7 @@ variables
   .command('modes <collectionId>')
   .description('List modes of a variable collection')
   .action(async (collectionId) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Fetching modes...').start();
     try {
       const code = `(async () => {
@@ -1773,7 +1758,7 @@ variables
   .command('add-mode <collectionId> <modeName>')
   .description('Add a new mode to a variable collection')
   .action(async (collectionId, modeName) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora(`Adding mode "${modeName}"...`).start();
     try {
       const code = `(async () => {
@@ -1799,8 +1784,8 @@ return JSON.stringify({ collection: col.name, modeName: '${modeName}', modeId: n
 program
   .command('delete-batch <nodeIds>')
   .description('Delete multiple nodes at once (comma-separated IDs or JSON array)')
-  .action((nodeIds) => {
-    checkConnection();
+  .action(async (nodeIds) => {
+    await checkConnection();
     let ids;
     try {
       ids = JSON.parse(nodeIds);
@@ -1828,8 +1813,8 @@ return 'Deleted ' + deleted + ' nodes';
 program
   .command('bind-batch <json>')
   .description('Bind variables to multiple nodes at once')
-  .action((json) => {
-    checkConnection();
+  .action(async (json) => {
+    await checkConnection();
     let bindings;
     try {
       bindings = JSON.parse(json);
@@ -1884,8 +1869,8 @@ return 'Bound ' + bound + ' properties';
 program
   .command('set-batch <json>')
   .description('Set properties on multiple nodes at once')
-  .action((json) => {
-    checkConnection();
+  .action(async (json) => {
+    await checkConnection();
     let operations;
     try {
       operations = JSON.parse(json);
@@ -1947,8 +1932,8 @@ return 'Updated ' + updated + ' nodes';
 program
   .command('rename-batch <json>')
   .description('Rename multiple nodes at once')
-  .action((json) => {
-    checkConnection();
+  .action(async (json) => {
+    await checkConnection();
     let renames;
     try {
       renames = JSON.parse(json);
@@ -2256,16 +2241,16 @@ const collections = program
 collections
   .command('list')
   .description('List all collections')
-  .action(() => {
-    checkConnection();
+  .action(async () => {
+    await checkConnection();
     figmaUse('collection list');
   });
 
 collections
   .command('create <name>')
   .description('Create a collection')
-  .action((name) => {
-    checkConnection();
+  .action(async (name) => {
+    await checkConnection();
     figmaUse(`collection create "${name}"`);
   });
 
@@ -2279,8 +2264,8 @@ tokens
   .command('tailwind')
   .description('Create Tailwind CSS color palette')
   .option('-c, --collection <name>', 'Collection name', 'Color - Primitive')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     const spinner = ora('Creating Tailwind color palette...').start();
 
     const tailwindColors = {
@@ -2346,7 +2331,7 @@ tokens
   .command('preset <name>')
   .description('Add color presets: shadcn, radix')
   .action(async (preset) => {
-    checkConnection();
+    await checkConnection();
 
     const presetLower = preset.toLowerCase();
 
@@ -2582,8 +2567,8 @@ tokens
   .command('shadcn')
   .description('Create shadcn/ui color primitives (from v3.shadcn.com/colors)')
   .option('-c, --collection <name>', 'Collection name', 'shadcn/primitives')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     const spinner = ora('Creating shadcn color primitives...').start();
 
     // All colors from https://v3.shadcn.com/colors
@@ -2650,8 +2635,8 @@ tokens
   .command('spacing')
   .description('Create spacing scale (4px base)')
   .option('-c, --collection <name>', 'Collection name', 'Spacing')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     const spinner = ora('Creating spacing scale...').start();
 
     const spacings = {
@@ -2693,8 +2678,8 @@ tokens
   .command('radii')
   .description('Create border radius scale')
   .option('-c, --collection <name>', 'Collection name', 'Radii')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     const spinner = ora('Creating border radii...').start();
 
     const radii = {
@@ -2734,8 +2719,8 @@ tokens
   .command('import <file>')
   .description('Import tokens from JSON file')
   .option('-c, --collection <name>', 'Collection name')
-  .action((file, options) => {
-    checkConnection();
+  .action(async (file, options) => {
+    await checkConnection();
 
     // Read JSON file
     let tokensData;
@@ -2826,7 +2811,7 @@ tokens
   .command('ds')
   .description('Create IDS Base Design System (complete starter kit)')
   .action(async () => {
-    checkConnection();
+    await checkConnection();
 
     console.log(chalk.cyan('\n  IDS Base Design System'));
     console.log(chalk.gray('  by Into Design Systems\n'));
@@ -3026,7 +3011,7 @@ tokens
   .command('components')
   .description('Create IDS Base Components (Button, Input, Card, Badge)')
   .action(async () => {
-    checkConnection();
+    await checkConnection();
 
     console.log(chalk.cyan('\n  IDS Base Components'));
     console.log(chalk.gray('  by Into Design Systems\n'));
@@ -3150,8 +3135,8 @@ tokens
   .description('Add a single token')
   .option('-c, --collection <name>', 'Collection name', 'Tokens')
   .option('-t, --type <type>', 'Type: COLOR, FLOAT, STRING, BOOLEAN (auto-detected if not set)')
-  .action((name, value, options) => {
-    checkConnection();
+  .action(async (name, value, options) => {
+    await checkConnection();
 
     const code = `(async () => {
 function hexToRgb(hex) {
@@ -3210,7 +3195,7 @@ create
   .option('--smart', 'Auto-position to avoid overlaps (default if no -x)')
   .option('-g, --gap <n>', 'Gap for smart positioning', '100')
   .action(async (name, options) => {
-    checkConnection();
+    await checkConnection();
     const useSmartPos = options.smart || options.x === undefined;
     const usesVars = options.fill && isVarRef(options.fill);
 
@@ -3244,7 +3229,7 @@ create
   .option('-y <n>', 'Y position', '0')
   .option('--spacing <n>', 'Gap from other elements', '100')
   .action(async (name, options) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora(`Fetching icon ${name}...`).start();
 
     try {
@@ -3337,7 +3322,7 @@ create
 
     try {
       const imageUrl = safeHttpUrl(url).href;
-      checkConnection();
+      await checkConnection();
 
       const posX = options.x !== undefined ? Number.parseInt(options.x, 10) : null;
       const posY = Number.parseInt(options.y, 10) || 0;
@@ -3408,7 +3393,7 @@ program
 
     try {
       const targetUrl = safeHttpUrl(url).href;
-      checkConnection();
+      await checkConnection();
 
       const captureArgs = [
         '--yes',
@@ -3476,13 +3461,25 @@ program
   .option('-h, --height <n>', 'Viewport height', '900')
   .option('--screenshot', 'Also save a screenshot')
   .action(async (url, options) => {
+    // Validate URL first (before spinner or playwright check)
+    const targetUrl = safeHttpUrl(url).href;
+
     const spinner = ora('Analyzing ' + url + ' with Playwright...').start();
+
+    // Check playwright is available before generating temp script
+    try {
+      await import('playwright');
+    } catch {
+      spinner.fail('Playwright is not installed.');
+      console.log(chalk.yellow('\n  Install it with: npm install playwright'));
+      console.log(chalk.gray('  (It is listed as an optionalDependency and may need a manual install on some systems)\n'));
+      process.exit(1);
+    }
 
     const scriptTemp = createSecureTempFile('figma-analyze-url', '.cjs');
     const screenshotTemp = options.screenshot ? createSecureTempFile('figma-analyze-screenshot', '.png') : null;
 
     try {
-      const targetUrl = safeHttpUrl(url).href;
       const viewportWidth = Number.parseInt(options.width, 10);
       const viewportHeight = Number.parseInt(options.height, 10);
 
@@ -3585,13 +3582,25 @@ program
   .option('-h, --height <n>', 'Viewport height', '900')
   .option('--name <name>', 'Frame name', 'Recreated Page')
   .action(async (url, options) => {
+    // Validate URL first (before spinner or playwright check)
+    const targetUrl = safeHttpUrl(url).href;
+
     const spinner = ora('Analyzing ' + url + ' with Playwright...').start();
+
+    // Check playwright is available before generating temp script
+    try {
+      await import('playwright');
+    } catch {
+      spinner.fail('Playwright is not installed.');
+      console.log(chalk.yellow('\n  Install it with: npm install playwright'));
+      console.log(chalk.gray('  (It is listed as an optionalDependency and may need a manual install on some systems)\n'));
+      process.exit(1);
+    }
 
     const scriptTemp = createSecureTempFile('figma-recreate-analyze', '.cjs');
 
     try {
-      const targetUrl = safeHttpUrl(url).href;
-      checkConnection();
+      await checkConnection();
 
       const viewportWidth = Number.parseInt(options.width, 10);
       const viewportHeight = Number.parseInt(options.height, 10);
@@ -3944,7 +3953,7 @@ program
   .description('Remove background from selected image (uses remove.bg API)')
   .option('--api-key <key>', 'Remove.bg API key')
   .action(async (nodeId, options) => {
-    checkConnection();
+    await checkConnection();
 
     // Get API key from option, env var, or config
     const config = loadConfig();
@@ -4098,7 +4107,7 @@ create
   .option('--radius <n>', 'Corner radius')
   .option('--opacity <n>', 'Opacity 0-1')
   .action(async (name, options) => {
-    checkConnection();
+    await checkConnection();
     const rectName = name || 'Rectangle';
     const useSmartPos = options.x === undefined;
     const usesVars = isVarRef(options.fill) || (options.stroke && isVarRef(options.stroke));
@@ -4138,7 +4147,7 @@ create
   .option('--fill <color>', 'Fill color (hex or var:name)', '#D9D9D9')
   .option('--stroke <color>', 'Stroke color (hex or var:name)')
   .action(async (name, options) => {
-    checkConnection();
+    await checkConnection();
     const ellipseName = name || 'Ellipse';
     const height = options.height || options.width;
     const useSmartPos = options.x === undefined;
@@ -4178,7 +4187,7 @@ create
   .option('--width <n>', 'Text box width (auto-width if not set)')
   .option('--spacing <n>', 'Gap from other elements', '100')
   .action(async (content, options) => {
-    checkConnection();
+    await checkConnection();
     const weightMap = { regular: 'Regular', medium: 'Medium', semibold: 'Semi Bold', bold: 'Bold' };
     const fontStyle = weightMap[options.weight.toLowerCase()] || 'Regular';
     const useSmartPos = options.x === undefined;
@@ -4219,7 +4228,7 @@ create
   .option('-w, --weight <n>', 'Stroke weight', '1')
   .option('--spacing <n>', 'Gap from other elements', '100')
   .action(async (options) => {
-    checkConnection();
+    await checkConnection();
     const useSmartPos = options.x1 === undefined;
     const lineLength = parseFloat(options.length);
     const usesVars = isVarRef(options.color);
@@ -4247,8 +4256,8 @@ return 'Line created at (' + smartX + ', ${options.y1}) with length ${lineLength
 create
   .command('component [name]')
   .description('Convert selection to component')
-  .action((name) => {
-    checkConnection();
+  .action(async (name) => {
+    await checkConnection();
     const compName = name || 'Component';
     let code = `
 const sel = figma.currentPage.selection;
@@ -4272,8 +4281,8 @@ else if (sel.length === 1) {
 create
   .command('group [name]')
   .description('Group current selection')
-  .action((name) => {
-    checkConnection();
+  .action(async (name) => {
+    await checkConnection();
     const groupName = name || 'Group';
     let code = `
 const sel = figma.currentPage.selection;
@@ -4301,7 +4310,7 @@ create
   .option('--radius <n>', 'Corner radius')
   .option('--spacing <n>', 'Gap from other elements', '100')
   .action(async (name, options) => {
-    checkConnection();
+    await checkConnection();
     const frameName = name || 'Auto Layout';
     const layoutMode = options.direction === 'col' ? 'VERTICAL' : 'HORIZONTAL';
     const useSmartPos = options.x === undefined;
@@ -4344,8 +4353,8 @@ const canvas = program
 canvas
   .command('info')
   .description('Show canvas info (bounds, element count, free space)')
-  .action(() => {
-    checkConnection();
+  .action(async () => {
+    await checkConnection();
     let code = `(function() {
 const children = figma.currentPage.children;
 if (children.length === 0) {
@@ -4376,8 +4385,8 @@ canvas
   .description('Get next free position on canvas (no overlap)')
   .option('-g, --gap <n>', 'Gap from existing elements', '100')
   .option('-d, --direction <dir>', 'Direction: right, below', 'right')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     let code = `
 const children = figma.currentPage.children;
 const gap = ${options.gap};
@@ -4408,8 +4417,8 @@ bind
   .command('fill <varName>')
   .description('Bind color variable to fill')
   .option('-n, --node <id>', 'Node ID (uses selection if not set)')
-  .action((varName, options) => {
-    checkConnection();
+  .action(async (varName, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4434,8 +4443,8 @@ bind
   .command('stroke <varName>')
   .description('Bind color variable to stroke')
   .option('-n, --node <id>', 'Node ID')
-  .action((varName, options) => {
-    checkConnection();
+  .action(async (varName, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4461,8 +4470,8 @@ bind
   .command('radius <varName>')
   .description('Bind number variable to corner radius')
   .option('-n, --node <id>', 'Node ID')
-  .action((varName, options) => {
-    checkConnection();
+  .action(async (varName, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4484,8 +4493,8 @@ bind
   .command('gap <varName>')
   .description('Bind number variable to auto-layout gap')
   .option('-n, --node <id>', 'Node ID')
-  .action((varName, options) => {
-    checkConnection();
+  .action(async (varName, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4508,8 +4517,8 @@ bind
   .description('Bind number variable to padding')
   .option('-n, --node <id>', 'Node ID')
   .option('-s, --side <side>', 'Side: top, right, bottom, left, all', 'all')
-  .action((varName, options) => {
-    checkConnection();
+  .action(async (varName, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4535,8 +4544,8 @@ bind
   .command('list')
   .description('List available variables for binding')
   .option('-t, --type <type>', 'Filter: COLOR, FLOAT')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     let code = `(async () => {
 const vars = await figma.variables.getLocalVariablesAsync();
 const filtered = vars${options.type ? `.filter(v => v.resolvedType === '${options.type.toUpperCase()}')` : ''};
@@ -4555,8 +4564,8 @@ sizing
   .command('hug')
   .description('Set to hug contents')
   .option('-a, --axis <axis>', 'Axis: both, h, v', 'both')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     let code = `
 const nodes = figma.currentPage.selection;
 if (nodes.length === 0) 'No selection';
@@ -4576,8 +4585,8 @@ sizing
   .command('fill')
   .description('Set to fill container')
   .option('-a, --axis <axis>', 'Axis: both, h, v', 'both')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     let code = `
 const nodes = figma.currentPage.selection;
 if (nodes.length === 0) 'No selection';
@@ -4595,8 +4604,8 @@ else {
 sizing
   .command('fixed <width> [height]')
   .description('Set to fixed size')
-  .action((width, height) => {
-    checkConnection();
+  .action(async (width, height) => {
+    await checkConnection();
     const h = height || width;
     let code = `
 const nodes = figma.currentPage.selection;
@@ -4619,8 +4628,8 @@ program
   .command('padding <value> [r] [b] [l]')
   .alias('pad')
   .description('Set padding (CSS-style: 1-4 values)')
-  .action((value, r, b, l) => {
-    checkConnection();
+  .action(async (value, r, b, l) => {
+    await checkConnection();
     let top = value, right = r || value, bottom = b || value, left = l || r || value;
     if (!r) { right = value; bottom = value; left = value; }
     else if (!b) { bottom = value; left = r; }
@@ -4644,8 +4653,8 @@ else {
 program
   .command('gap <value>')
   .description('Set auto-layout gap')
-  .action((value) => {
-    checkConnection();
+  .action(async (value) => {
+    await checkConnection();
     let code = `
 const nodes = figma.currentPage.selection;
 if (nodes.length === 0) 'No selection';
@@ -4660,8 +4669,8 @@ else {
 program
   .command('align <alignment>')
   .description('Align items: start, center, end, stretch')
-  .action((alignment) => {
-    checkConnection();
+  .action(async (alignment) => {
+    await checkConnection();
     const map = { start: 'MIN', center: 'CENTER', end: 'MAX', stretch: 'STRETCH' };
     const val = map[alignment.toLowerCase()] || 'CENTER';
     let code = `
@@ -4683,8 +4692,8 @@ else {
 program
   .command('select <nodeId>')
   .description('Select a node by ID')
-  .action((nodeId) => {
-    checkConnection();
+  .action(async (nodeId) => {
+    await checkConnection();
     figmaUse(`select "${nodeId}"`);
   });
 
@@ -4694,8 +4703,8 @@ program
   .command('delete [nodeId]')
   .alias('remove')
   .description('Delete node by ID or current selection')
-  .action((nodeId) => {
-    checkConnection();
+  .action(async (nodeId) => {
+    await checkConnection();
     if (nodeId) {
       let code = `(async () => {
 const node = await figma.getNodeByIdAsync('${nodeId}');
@@ -4719,8 +4728,8 @@ program
   .alias('dup')
   .description('Duplicate node by ID or current selection')
   .option('--offset <n>', 'Offset from original', '20')
-  .action((nodeId, options) => {
-    checkConnection();
+  .action(async (nodeId, options) => {
+    await checkConnection();
     if (nodeId) {
       let code = `(async () => {
 const node = await figma.getNodeByIdAsync('${nodeId}');
@@ -4748,7 +4757,7 @@ set
   .description('Set fill color (hex or var:name)')
   .option('-n, --node <id>', 'Node ID (uses selection if not set)')
   .action(async (color, options) => {
-    checkConnection();
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4794,7 +4803,7 @@ set
   .option('-n, --node <id>', 'Node ID')
   .option('-w, --weight <n>', 'Stroke weight', '1')
   .action(async (color, options) => {
-    checkConnection();
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4838,8 +4847,8 @@ set
   .command('radius <value>')
   .description('Set corner radius')
   .option('-n, --node <id>', 'Node ID')
-  .action((value, options) => {
-    checkConnection();
+  .action(async (value, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4855,8 +4864,8 @@ set
   .command('size <width> <height>')
   .description('Set size')
   .option('-n, --node <id>', 'Node ID')
-  .action((width, height, options) => {
-    checkConnection();
+  .action(async (width, height, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4873,8 +4882,8 @@ set
   .alias('position')
   .description('Set position')
   .option('-n, --node <id>', 'Node ID')
-  .action((x, y, options) => {
-    checkConnection();
+  .action(async (x, y, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4890,8 +4899,8 @@ set
   .command('opacity <value>')
   .description('Set opacity (0-1)')
   .option('-n, --node <id>', 'Node ID')
-  .action((value, options) => {
-    checkConnection();
+  .action(async (value, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4907,8 +4916,8 @@ set
   .command('name <name>')
   .description('Rename node')
   .option('-n, --node <id>', 'Node ID')
-  .action((name, options) => {
-    checkConnection();
+  .action(async (name, options) => {
+    await checkConnection();
     const nodeSelector = options.node
       ? `const node = await figma.getNodeByIdAsync('${options.node}'); const nodes = node ? [node] : [];`
       : `const nodes = figma.currentPage.selection;`;
@@ -4926,8 +4935,8 @@ set
   .description('Apply auto-layout to selection (row/col)')
   .option('-g, --gap <n>', 'Gap between items', '8')
   .option('-p, --padding <n>', 'Padding')
-  .action((direction, options) => {
-    checkConnection();
+  .action(async (direction, options) => {
+    await checkConnection();
     const layoutMode = direction === 'col' || direction === 'vertical' ? 'VERTICAL' : 'HORIZONTAL';
     let code = `
 const sel = figma.currentPage.selection;
@@ -4955,8 +4964,8 @@ program
   .description('Arrange frames on canvas')
   .option('-g, --gap <n>', 'Gap between frames', '100')
   .option('-c, --cols <n>', 'Number of columns (0 = single row)', '0')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     let code = `
 const frames = figma.currentPage.children.filter(n => n.type === 'FRAME' || n.type === 'COMPONENT');
 if (frames.length === 0) 'No frames to arrange';
@@ -4989,8 +4998,8 @@ else {
 program
   .command('get [nodeId]')
   .description('Get properties of node or selection')
-  .action((nodeId) => {
-    checkConnection();
+  .action(async (nodeId) => {
+    await checkConnection();
     const nodeSelector = nodeId
       ? `const node = await figma.getNodeByIdAsync('${nodeId}');`
       : `const node = figma.currentPage.selection[0];`;
@@ -5533,8 +5542,8 @@ exp
   .option('-o, --output <file>', 'Output file', 'screenshot.png')
   .option('-s, --scale <number>', 'Export scale (1-4)', '2')
   .option('-f, --format <format>', 'Format: png, jpg, svg, pdf', 'png')
-  .action((options) => {
-    checkConnection();
+  .action(async (options) => {
+    await checkConnection();
     const format = options.format.toUpperCase();
     const scale = parseFloat(options.scale);
     const code = `(async () => {
@@ -5571,8 +5580,8 @@ exp
   .option('-o, --output <file>', 'Output file', 'node-export.png')
   .option('-s, --scale <number>', 'Export scale', '2')
   .option('-f, --format <format>', 'Format: png, svg, pdf, jpg', 'png')
-  .action((nodeId, options) => {
-    checkConnection();
+  .action(async (nodeId, options) => {
+    await checkConnection();
     const format = options.format.toUpperCase();
     const scale = parseFloat(options.scale);
     const code = `(async () => {
@@ -5605,8 +5614,8 @@ return {
 exp
   .command('css')
   .description('Export variables as CSS custom properties')
-  .action(() => {
-    checkConnection();
+  .action(async () => {
+    await checkConnection();
     const code = `(async () => {
 const vars = await figma.variables.getLocalVariablesAsync();
 const css = vars.map(v => {
@@ -5626,8 +5635,8 @@ return ':root {\\n' + css + '\\n}';
 exp
   .command('tailwind')
   .description('Export color variables as Tailwind config')
-  .action(() => {
-    checkConnection();
+  .action(async () => {
+    await checkConnection();
     const code = `(async () => {
 const vars = await figma.variables.getLocalVariablesAsync();
 const colorVars = vars.filter(v => v.resolvedType === 'COLOR');
@@ -5657,8 +5666,8 @@ program
   .option('-s, --scale <number>', 'Export scale (default: 0.5 for small size)', '0.5')
   .option('--max <pixels>', 'Max dimension in pixels (default: 2000)', '2000')
   .option('--save [path]', 'Save as PNG file (default: /tmp/figma-verify-{id}.png)')
-  .action((nodeId, options) => {
-    checkConnection();
+  .action(async (nodeId, options) => {
+    await checkConnection();
     const scale = parseFloat(options.scale);
     const maxDim = parseInt(options.max);
 
@@ -5744,7 +5753,7 @@ program
   .description('Execute JavaScript in Figma plugin context')
   .option('-f, --file <path>', 'Run code from file instead of argument')
   .action(async (code, options) => {
-    checkConnection();
+    await checkConnection();
     let jsCode = code ? unescapeShell(code) : code;
 
     // If --file option provided, read code from file
@@ -5804,7 +5813,7 @@ program
   .command('run <file>')
   .description('Run JavaScript file in Figma (alias for eval --file)')
   .action(async (file) => {
-    checkConnection();
+    await checkConnection();
     const resolvedFile = resolveProjectScriptPath(file);
     if (!existsSync(resolvedFile)) {
       console.log(chalk.red('✗ File not found: ' + resolvedFile));
@@ -5832,8 +5841,8 @@ program
 program
   .command('raw <command...>')
   .description('Run raw figma-use command')
-  .action((command) => {
-    checkConnection();
+  .action(async (command) => {
+    await checkConnection();
     figmaUse(command.join(' '));
   });
 
@@ -8574,7 +8583,7 @@ shadcn
   .description('Add shadcn/ui component(s) to Figma canvas')
   .option('--all', 'Add all components')
   .action(async (names, options) => {
-    checkConnection();
+    await checkConnection();
 
     let items;
     if (options.all) {
@@ -8709,7 +8718,7 @@ style
   .description('List all local styles (paint, text, effect, grid)')
   .option('-t, --type <type>', 'Filter by type: paint, text, effect, grid')
   .action(async (options) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Fetching styles...').start();
     try {
       const filterType = options.type || 'all';
@@ -8783,7 +8792,7 @@ style
   .option('--color <hex>', 'Color in hex format', '#000000')
   .option('--description <text>', 'Style description')
   .action(async (name, options) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora(`Creating paint style "${name}"...`).start();
     try {
       const hex = options.color.replace('#', '');
@@ -8820,7 +8829,7 @@ style
   .option('--font <f>', 'Font family', 'Inter')
   .option('--description <text>', 'Style description')
   .action(async (name, options) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora(`Creating text style "${name}"...`).start();
     try {
       const size = parseFloat(options.size);
@@ -8855,7 +8864,7 @@ style
   .option('--opacity <n>', 'Shadow opacity 0-1', '0.25')
   .option('--description <text>', 'Style description')
   .action(async (name, options) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora(`Creating effect style "${name}"...`).start();
     try {
       const blur = parseFloat(options.blur);
@@ -8900,7 +8909,7 @@ style
   .command('apply <styleId>')
   .description('Apply a style to the current selection')
   .action(async (styleId) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Applying style...').start();
     try {
       const code = `(async () => {
@@ -8942,7 +8951,7 @@ style
   .command('delete <styleId>')
   .description('Delete a style by ID')
   .action(async (styleId) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Deleting style...').start();
     try {
       const code = `(async () => {
@@ -9216,7 +9225,7 @@ library
   .command('list')
   .description('List available library variable collections')
   .action(async () => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Fetching library collections...').start();
     try {
       const code = `(async () => {
@@ -9249,7 +9258,7 @@ library
   .command('variables <collectionKey>')
   .description('List variables in a library collection')
   .action(async (collectionKey) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Fetching library variables...').start();
     try {
       const code = `(async () => {
@@ -9282,7 +9291,7 @@ library
   .command('import-var <variableKey>')
   .description('Import a variable from team library into local file')
   .action(async (variableKey) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Importing variable...').start();
     try {
       const code = `(async () => {
@@ -9301,7 +9310,7 @@ library
   .command('import-component <componentKey>')
   .description('Import a component from team library')
   .action(async (componentKey) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Importing component...').start();
     try {
       const code = `(async () => {
@@ -9320,7 +9329,7 @@ library
   .command('import-style <styleKey>')
   .description('Import a style from team library')
   .action(async (styleKey) => {
-    checkConnection();
+    await checkConnection();
     const spinner = ora('Importing style...').start();
     try {
       const code = `(async () => {

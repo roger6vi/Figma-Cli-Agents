@@ -17,7 +17,7 @@
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { timingSafeEqual } from 'crypto';
-import { readFileSync, statSync, writeFileSync, unlinkSync, readdirSync } from 'fs';
+import { readFileSync, statSync, writeFileSync, unlinkSync, readdirSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -25,6 +25,8 @@ import { fileURLToPath, pathToFileURL } from 'url';
 // Hot-reload FigmaClient: copy to temp file and import (Node.js ES modules don't support cache busting)
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const figmaClientPath = join(__dirname, 'figma-client.js');
+// Use dedicated cache dir outside src/ to avoid polluting the source tree
+const HOT_RELOAD_CACHE_DIR = join(homedir(), '.figma-ds-cli', 'tmp');
 let FigmaClient = null;
 let lastModTime = 0;
 let lastTempFile = null;
@@ -36,16 +38,19 @@ async function getFigmaClient() {
 
     // Reload if file changed or never loaded
     if (!FigmaClient || modTime > lastModTime) {
-      // Clean up old temp files in project directory (keeps node_modules accessible)
+      // Ensure cache directory exists
+      try { mkdirSync(HOT_RELOAD_CACHE_DIR, { recursive: true }); } catch {}
+
+      // Clean up old temp files in cache directory
       try {
-        const oldFiles = readdirSync(__dirname).filter(f => f.startsWith('.figma-client-') && f.endsWith('.mjs'));
+        const oldFiles = readdirSync(HOT_RELOAD_CACHE_DIR).filter(f => f.startsWith('.figma-client-') && f.endsWith('.mjs'));
         for (const f of oldFiles) {
-          try { unlinkSync(join(__dirname, f)); } catch {}
+          try { unlinkSync(join(HOT_RELOAD_CACHE_DIR, f)); } catch {}
         }
       } catch {}
 
-      // Copy to temp file in same directory (so imports resolve correctly)
-      const tempFile = join(__dirname, `.figma-client-${modTime}.mjs`);
+      // Copy to temp file in cache directory (imports resolve via file URL)
+      const tempFile = join(HOT_RELOAD_CACHE_DIR, `.figma-client-${modTime}.mjs`);
       const content = readFileSync(figmaClientPath, 'utf8');
       writeFileSync(tempFile, content);
       lastTempFile = tempFile;
@@ -452,8 +457,16 @@ async function handleRequest(req, res) {
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const { action, code, jsx, jsxArray, gap, vertical } = JSON.parse(body);
+          const { action, code, jsx, jsxArray, gap, vertical, timeout: reqTimeout } = JSON.parse(body);
           let result;
+
+          // Clamp caller-provided timeout: min 5s, max 300s; default 30s
+          const EVAL_TIMEOUT_MIN = 5000;
+          const EVAL_TIMEOUT_MAX = 300000;
+          const EVAL_TIMEOUT_DEFAULT = 30000;
+          const evalTimeout = reqTimeout != null
+            ? Math.min(Math.max(Number(reqTimeout), EVAL_TIMEOUT_MIN), EVAL_TIMEOUT_MAX)
+            : EVAL_TIMEOUT_DEFAULT;
 
           const execWithTimeout = async (fn, timeoutMs = 30000) => {
             return Promise.race([
@@ -466,7 +479,7 @@ async function handleRequest(req, res) {
 
           switch (action) {
             case 'eval':
-              result = await execWithTimeout(() => executeEval(code));
+              result = await execWithTimeout(() => executeEval(code), evalTimeout);
               break;
             case 'render': {
               // Parse JSX to code, then execute via unified eval (works with both CDP and Plugin)

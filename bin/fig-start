@@ -259,6 +259,8 @@ launch_agent() {
 
     # Export env vars for agents that read AGENTS.md directly (Crush, OpenCode)
     export FIGMA_SAFE_MODE="$SAFE_MODE"
+    export FIGMA_REPO_PATH="$REPO_PATH"
+    export FIGMA_CLI_CONTEXT="$AGENT_CONTEXT"
 
     case "$agent_choice" in
         2|codex|Codex)
@@ -284,6 +286,10 @@ launch_agent() {
             fi
             echo -e "  ${GREEN}Launching Crush...${NC}"
             echo ""
+            # Write a temporary context file so Crush can read session info on startup
+            CRUSH_CTX_FILE="$REPO_PATH/.figma-cli-agent-context.md"
+            printf '# Figma CLI Agent Context\n\n%s\n\nRead AGENTS.md for available commands.\n' "$AGENT_CONTEXT" > "$CRUSH_CTX_FILE"
+            cd "$REPO_PATH" || true
             exec crush --yolo
             ;;
         5|opencode|OpenCode|openCode)
@@ -294,6 +300,10 @@ launch_agent() {
             fi
             echo -e "  ${GREEN}Launching OpenCode...${NC}"
             echo ""
+            # Write a temporary context file so OpenCode can read session info on startup
+            OC_CTX_FILE="$REPO_PATH/.figma-cli-agent-context.md"
+            printf '# Figma CLI Agent Context\n\n%s\n\nRead AGENTS.md for available commands.\n' "$AGENT_CONTEXT" > "$OC_CTX_FILE"
+            cd "$REPO_PATH" || true
             exec opencode
             ;;
         *)

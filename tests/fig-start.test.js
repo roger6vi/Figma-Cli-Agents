@@ -25,8 +25,23 @@ describe('fig-start agent picker', () => {
     assert.match(figStart, /exec crush --yolo/);
   });
 
+  it('launches Crush from repo directory with context file', () => {
+    assert.match(figStart, /cd "\$REPO_PATH".*exec crush --yolo/s);
+    assert.match(figStart, /\.figma-cli-agent-context\.md/);
+  });
+
   it('launches OpenCode', () => {
     assert.match(figStart, /exec opencode/);
+  });
+
+  it('launches OpenCode from repo directory with context file', () => {
+    assert.match(figStart, /cd "\$REPO_PATH".*exec opencode/s);
+    assert.match(figStart, /\.figma-cli-agent-context\.md/);
+  });
+
+  it('exports FIGMA_REPO_PATH and FIGMA_CLI_CONTEXT for env-based agents', () => {
+    assert.match(figStart, /export FIGMA_REPO_PATH="\$REPO_PATH"/);
+    assert.match(figStart, /export FIGMA_CLI_CONTEXT="\$AGENT_CONTEXT"/);
   });
 
   it('exports FIGMA_SAFE_MODE for env-based agents', () => {

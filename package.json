@@ -47,5 +47,8 @@
     "commander": "^12.0.0",
     "ora": "^8.0.0",
     "ws": "^8.16.0"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.40.0"
   }
 }

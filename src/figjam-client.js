@@ -89,23 +89,46 @@ export class FigJamClient {
         }
 
         if (msg.id && this.callbacks.has(msg.id)) {
-          this.callbacks.get(msg.id)(msg);
+          const entry = this.callbacks.get(msg.id);
           this.callbacks.delete(msg.id);
+          clearTimeout(entry.timer);
+          entry.resolve(msg);
         }
       });
 
-      this.ws.on('error', reject);
+      this.ws.on('close', () => this._rejectPending('WebSocket closed'));
+      this.ws.on('error', (err) => {
+        this._rejectPending(`WebSocket error: ${err.message}`);
+        reject(err);
+      });
 
       setTimeout(() => reject(new Error('Connection timeout')), 10000);
     });
   }
 
-  send(method, params = {}) {
-    return new Promise((resolve) => {
+  send(method, params = {}, timeoutMs = 30000) {
+    return new Promise((resolve, reject) => {
       const id = ++this.msgId;
-      this.callbacks.set(id, resolve);
+      const timer = setTimeout(() => {
+        if (this.callbacks.has(id)) {
+          this.callbacks.delete(id);
+          reject(new Error(`CDP send timeout after ${timeoutMs}ms (method: ${method})`));
+        }
+      }, timeoutMs);
+      this.callbacks.set(id, { resolve, reject, timer });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
+  }
+
+  /**
+   * Reject all pending callbacks — called on socket close or error.
+   */
+  _rejectPending(reason) {
+    for (const [id, entry] of this.callbacks) {
+      this.callbacks.delete(id);
+      clearTimeout(entry.timer);
+      try { entry.reject(new Error(reason)); } catch {}
+    }
   }
 
   /**
@@ -295,6 +318,7 @@ export class FigJamClient {
 
   close() {
     if (this.ws) {
+      this._rejectPending('Connection closed');
       this.ws.close();
       this.ws = null;
     }
