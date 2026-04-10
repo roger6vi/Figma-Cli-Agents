@@ -22,7 +22,7 @@ import { FigJamClient } from './figjam-client.js';
 import { FigmaClient } from './figma-client.js';
 import { isPatched, patchFigma, unpatchFigma, getFigmaCommand, getCdpPort, getFigmaBinaryPath } from './figma-patch.js';
 import { listComponents, getComponent, getAllComponents, VISUAL_COMPONENTS } from './shadcn.js';
-import { hexToRgb } from './color-utils.js';
+import { hexToRgb, FIGMA_HEX_TO_RGB_SOURCE, FIGMA_RGB_TO_HEX_SOURCE } from './color-utils.js';
 import { listBlocks, getBlock } from './blocks/index.js';
 import {
   nullDevice, killPort, getPortPid, sleepAfterStop,
@@ -1334,14 +1334,7 @@ let col = cols.find(c => c.id === '${options.collection}' || c.name === '${optio
 if (!col) return 'Collection not found: ${options.collection}';
 const modeId = col.modes[0].modeId;
 
-function hexToRgb(hex) {
-  const result = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  return result ? {
-    r: parseInt(result[1], 16) / 255,
-    g: parseInt(result[2], 16) / 255,
-    b: parseInt(result[3], 16) / 255
-  } : null;
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 
 const v = figma.variables.createVariable('${name}', col, '${type}');
 ${options.value ? `
@@ -1582,10 +1575,7 @@ let col = cols.find(c => c.id === '${options.collection}' || c.name === '${optio
 if (!col) return 'Collection not found: ${options.collection}';
 const modeId = col.modes[0].modeId;
 
-function hexToRgb(hex) {
-  const result = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  return result ? { r: parseInt(result[1], 16) / 255, g: parseInt(result[2], 16) / 255, b: parseInt(result[3], 16) / 255 } : null;
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 
 let created = 0;
 for (const v of vars) {
@@ -1883,10 +1873,7 @@ program
 const operations = ${JSON.stringify(operations)};
 let updated = 0;
 
-function hexToRgb(hex) {
-  const result = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  return result ? { r: parseInt(result[1], 16) / 255, g: parseInt(result[2], 16) / 255, b: parseInt(result[3], 16) / 255 } : null;
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 
 for (const op of operations) {
   const node = await figma.getNodeByIdAsync(op.nodeId);
@@ -2295,10 +2282,7 @@ tokens
 
     const code = `(async () => {
 const colors = ${JSON.stringify(tailwindColors)};
-function hexToRgb(hex) {
-  const r = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  return { r: parseInt(r[1], 16) / 255, g: parseInt(r[2], 16) / 255, b: parseInt(r[3], 16) / 255 };
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 const cols = await figma.variables.getLocalVariableCollectionsAsync();
 let col = cols.find(c => c.name === '${options.collection}');
 if (!col) col = figma.variables.createVariableCollection('${options.collection}');
@@ -2408,10 +2392,7 @@ tokens
 const primitives = ${JSON.stringify(primitives)};
 const semanticTokens = ${JSON.stringify(semanticTokens)};
 
-function hexToRgb(hex) {
-  const r = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  return r ? { r: parseInt(r[1], 16) / 255, g: parseInt(r[2], 16) / 255, b: parseInt(r[3], 16) / 255 } : null;
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 
 // Step 1: Create primitives collection
 const cols = await figma.variables.getLocalVariableCollectionsAsync();
@@ -2513,10 +2494,7 @@ return 'Created ' + primCount + ' primitives + ' + semCount + ' semantic tokens 
       const code = `(async () => {
 const colors = ${JSON.stringify(radixColors)};
 
-function hexToRgb(hex) {
-  const r = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  return r ? { r: parseInt(r[1], 16) / 255, g: parseInt(r[2], 16) / 255, b: parseInt(r[3], 16) / 255 } : null;
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 
 const cols = await figma.variables.getLocalVariableCollectionsAsync();
 let col = cols.find(c => c.name === 'radix/colors');
@@ -2599,10 +2577,7 @@ tokens
 
     const code = `(async () => {
 const colors = ${JSON.stringify(shadcnColors)};
-function hexToRgb(hex) {
-  const r = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  return { r: parseInt(r[1], 16) / 255, g: parseInt(r[2], 16) / 255, b: parseInt(r[3], 16) / 255 };
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 const cols = await figma.variables.getLocalVariableCollectionsAsync();
 let col = cols.find(c => c.name === '${options.collection}');
 if (!col) col = figma.variables.createVariableCollection('${options.collection}');
@@ -2742,11 +2717,7 @@ tokens
 const data = ${JSON.stringify(tokensData)};
 const collectionName = '${collectionName}';
 
-function hexToRgb(hex) {
-  const r = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  if (!r) return null;
-  return { r: parseInt(r[1], 16) / 255, g: parseInt(r[2], 16) / 255, b: parseInt(r[3], 16) / 255 };
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 
 function detectType(value) {
   if (typeof value === 'string' && value.startsWith('#')) return 'COLOR';
@@ -2860,10 +2831,7 @@ tokens
     let spinner = ora('Creating Color - Primitives...').start();
     const primitivesCode = `(async () => {
 const colors = ${JSON.stringify(idsColors)};
-function hexToRgb(hex) {
-  const r = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  return { r: parseInt(r[1], 16) / 255, g: parseInt(r[2], 16) / 255, b: parseInt(r[3], 16) / 255 };
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 const cols = await figma.variables.getLocalVariableCollectionsAsync();
 let col = cols.find(c => c.name === 'Color - Primitives');
 if (!col) col = figma.variables.createVariableCollection('Color - Primitives');
@@ -2891,10 +2859,7 @@ return count;
     spinner = ora('Creating Color - Semantic...').start();
     const semanticCode = `(async () => {
 const colors = ${JSON.stringify(idsSemanticColors)};
-function hexToRgb(hex) {
-  const r = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  return { r: parseInt(r[1], 16) / 255, g: parseInt(r[2], 16) / 255, b: parseInt(r[3], 16) / 255 };
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 const cols = await figma.variables.getLocalVariableCollectionsAsync();
 let col = cols.find(c => c.name === 'Color - Semantic');
 if (!col) col = figma.variables.createVariableCollection('Color - Semantic');
@@ -3139,11 +3104,7 @@ tokens
     await checkConnection();
 
     const code = `(async () => {
-function hexToRgb(hex) {
-  const r = /^#?([a-f\\d]{2})([a-f\\d]{2})([a-f\\d]{2})$/i.exec(hex);
-  if (!r) return null;
-  return { r: parseInt(r[1], 16) / 255, g: parseInt(r[2], 16) / 255, b: parseInt(r[3], 16) / 255 };
-}
+${FIGMA_HEX_TO_RGB_SOURCE}
 
 const value = '${value}';
 let type = '${options.type || ''}';
@@ -5946,9 +5907,7 @@ analyze
     if (await isInSafeMode()) {
       const code = `(async () => {
         const colors = new Map();
-        function rgbToHex(r, g, b) {
-          return '#' + [r, g, b].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
-        }
+        ${FIGMA_RGB_TO_HEX_SOURCE}
         function checkNode(node) {
           if (node.fills && Array.isArray(node.fills)) {
             node.fills.forEach(f => {
@@ -7704,9 +7663,7 @@ program
 
         if (!nodes.length || !nodes[0]) return 'No node selected';
 
-        function rgbToHex(r, g, b) {
-          return '#' + [r, g, b].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
-        }
+        ${FIGMA_RGB_TO_HEX_SOURCE}
 
         function nodeToJsx(node, indent = 0) {
           const prefix = '  '.repeat(indent);
@@ -8798,14 +8755,7 @@ style
       const hex = options.color.replace('#', '');
       const desc = options.description || '';
       const code = `(async () => {
-        function hexToRgb(hex) {
-          hex = hex.replace('#', '');
-          return {
-            r: parseInt(hex.substr(0, 2), 16) / 255,
-            g: parseInt(hex.substr(2, 2), 16) / 255,
-            b: parseInt(hex.substr(4, 2), 16) / 255
-          };
-        }
+        ${FIGMA_HEX_TO_RGB_SOURCE}
         const style = figma.createPaintStyle();
         style.name = ${JSON.stringify(name)};
         if (${JSON.stringify(desc)}) style.description = ${JSON.stringify(desc)};
@@ -8874,14 +8824,7 @@ style
       const opacity = parseFloat(options.opacity);
       const desc = options.description || '';
       const code = `(async () => {
-        function hexToRgb(hex) {
-          hex = hex.replace('#', '');
-          return {
-            r: parseInt(hex.substr(0, 2), 16) / 255,
-            g: parseInt(hex.substr(2, 2), 16) / 255,
-            b: parseInt(hex.substr(4, 2), 16) / 255
-          };
-        }
+        ${FIGMA_HEX_TO_RGB_SOURCE}
         const style = figma.createEffectStyle();
         style.name = ${JSON.stringify(name)};
         if (${JSON.stringify(desc)}) style.description = ${JSON.stringify(desc)};

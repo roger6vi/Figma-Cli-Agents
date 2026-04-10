@@ -78,6 +78,89 @@ describe('color-utils hexToRgb', () => {
   });
 });
 
+// ── FIGMA_HEX_TO_RGB_SOURCE / FIGMA_RGB_TO_HEX_SOURCE ───────────────────────
+
+describe('color-utils Figma runtime source constants', () => {
+  let FIGMA_HEX_TO_RGB_SOURCE;
+  let FIGMA_RGB_TO_HEX_SOURCE;
+
+  before(async () => {
+    const mod = await import(resolve(repoRoot, 'src/color-utils.js'));
+    FIGMA_HEX_TO_RGB_SOURCE = mod.FIGMA_HEX_TO_RGB_SOURCE;
+    FIGMA_RGB_TO_HEX_SOURCE = mod.FIGMA_RGB_TO_HEX_SOURCE;
+  });
+
+  it('FIGMA_HEX_TO_RGB_SOURCE is a non-empty string containing function hexToRgb', () => {
+    assert.equal(typeof FIGMA_HEX_TO_RGB_SOURCE, 'string');
+    assert.ok(FIGMA_HEX_TO_RGB_SOURCE.length > 0, 'must be non-empty');
+    assert.ok(FIGMA_HEX_TO_RGB_SOURCE.includes('function hexToRgb'), 'must declare hexToRgb');
+  });
+
+  it('FIGMA_RGB_TO_HEX_SOURCE is a non-empty string containing function rgbToHex', () => {
+    assert.equal(typeof FIGMA_RGB_TO_HEX_SOURCE, 'string');
+    assert.ok(FIGMA_RGB_TO_HEX_SOURCE.length > 0, 'must be non-empty');
+    assert.ok(FIGMA_RGB_TO_HEX_SOURCE.includes('function rgbToHex'), 'must declare rgbToHex');
+  });
+
+  it('FIGMA_HEX_TO_RGB_SOURCE evaluates correctly for #ff0000', () => {
+    const fn = new Function(`${FIGMA_HEX_TO_RGB_SOURCE}; return hexToRgb('#ff0000');`);
+    const result = fn();
+    assert.deepEqual(result, { r: 1, g: 0, b: 0 });
+  });
+
+  it('FIGMA_HEX_TO_RGB_SOURCE evaluates correctly for #000000', () => {
+    const fn = new Function(`${FIGMA_HEX_TO_RGB_SOURCE}; return hexToRgb('#000000');`);
+    const result = fn();
+    assert.deepEqual(result, { r: 0, g: 0, b: 0 });
+  });
+
+  it('FIGMA_HEX_TO_RGB_SOURCE handles 3-char shorthand #fff', () => {
+    const fn = new Function(`${FIGMA_HEX_TO_RGB_SOURCE}; return hexToRgb('#fff');`);
+    const result = fn();
+    assert.deepEqual(result, { r: 1, g: 1, b: 1 });
+  });
+
+  it('FIGMA_HEX_TO_RGB_SOURCE returns null on invalid input', () => {
+    const fn = new Function(`${FIGMA_HEX_TO_RGB_SOURCE}; return hexToRgb('notacolor');`);
+    const result = fn();
+    assert.equal(result, null);
+  });
+
+  it('FIGMA_RGB_TO_HEX_SOURCE evaluates correctly for r=1 g=0 b=0', () => {
+    const fn = new Function(`${FIGMA_RGB_TO_HEX_SOURCE}; return rgbToHex(1, 0, 0);`);
+    const result = fn();
+    assert.equal(result, '#ff0000');
+  });
+
+  it('FIGMA_RGB_TO_HEX_SOURCE round-trips with FIGMA_HEX_TO_RGB_SOURCE', () => {
+    const fn = new Function(`
+      ${FIGMA_HEX_TO_RGB_SOURCE}
+      ${FIGMA_RGB_TO_HEX_SOURCE}
+      const rgb = hexToRgb('#804020');
+      return rgbToHex(rgb.r, rgb.g, rgb.b);
+    `);
+    assert.equal(fn(), '#804020');
+  });
+
+  it('no bare function hexToRgb definitions remain in src/index.js template strings', async () => {
+    const { readFileSync } = await import('fs');
+    const src = readFileSync(resolve(repoRoot, 'src/index.js'), 'utf8');
+    // Match lines containing the literal function body (old inline definitions)
+    // A bare function hexToRgb(hex) definition (not inside a template literal constant)
+    // would appear without the FIGMA_HEX_TO_RGB_SOURCE wrapper. We check the
+    // entire file has ZERO lines that look like the old inline pattern.
+    const inlinePattern = /^\s*function hexToRgb\(hex\)/m;
+    assert.ok(!inlinePattern.test(src), 'Found bare inline function hexToRgb — all should be replaced');
+  });
+
+  it('no bare function rgbToHex definitions remain in src/index.js template strings', async () => {
+    const { readFileSync } = await import('fs');
+    const src = readFileSync(resolve(repoRoot, 'src/index.js'), 'utf8');
+    const inlinePattern = /^\s*function rgbToHex\(/m;
+    assert.ok(!inlinePattern.test(src), 'Found bare inline function rgbToHex — all should be replaced');
+  });
+});
+
 // ── slugify fallback ──────────────────────────────────────────────────────────
 
 describe('slugify fallback for empty/non-ASCII titles', () => {
