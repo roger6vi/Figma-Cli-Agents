@@ -1,19 +1,24 @@
-# figma-ds-cli
+# Figma-Cli-Agents
+
+<p align="center">
+  <i>Agent-first Figma Desktop automation with signed releases and versioned change history.</i>
+</p>
 
 <p align="center">
   <a href="https://intodesignsystems.com"><img src="https://img.shields.io/badge/Into_Design_Systems-intodesignsystems.com-ff6b35" alt="Into Design Systems"></a>
   <img src="https://img.shields.io/badge/Figma-Desktop-purple" alt="Figma Desktop">
   <img src="https://img.shields.io/badge/No_API_Key-Required-green" alt="No API Key">
-  <img src="https://img.shields.io/badge/Claude_Code-Ready-blue" alt="Claude Code">
+  <img src="https://img.shields.io/badge/Version-v2.1.0-111827" alt="Version v2.1.0">
+  <img src="https://img.shields.io/badge/Claude_%2B_Codex_%2B_Gemini_%2B_Crush_%2B_OpenCode-Ready-blue" alt="Claude, Codex, Gemini, Crush, and OpenCode">
 </p>
 
 <p align="center">
-  <b>Control Figma Desktop with Claude Code.</b><br>
+  <b>Control Figma Desktop with Claude, Codex, Gemini, Crush, or OpenCode.</b><br>
   Full read/write access. No API key required.<br>
-  Just talk to Claude about your designs.
+  Just talk to your coding agent about your designs.
 </p>
 
-```
+```text
   ███████╗██╗ ██████╗ ███╗   ███╗ █████╗       ██████╗ ███████╗       ██████╗██╗     ██╗
   ██╔════╝██║██╔════╝ ████╗ ████║██╔══██╗      ██╔══██╗██╔════╝      ██╔════╝██║     ██║
   █████╗  ██║██║  ███╗██╔████╔██║███████║█████╗██║  ██║███████╗█████╗██║     ██║     ██║
@@ -30,14 +35,27 @@ A CLI that connects directly to Figma Desktop and gives you complete control:
 - **Design Tokens** — Create variables, collections, modes (Light/Dark), bind to nodes
 - **Create Anything** — Frames, text, shapes, icons (150k+ from Iconify), components
 - **Slots** — Create and manage Figma's new Slots feature for flexible component content
+- **Blocks** — Pre-built UI layouts (dashboards, page templates) bound to shadcn variables
+- **Verify** — AI screenshot validation after every component creation
+- **Accessibility Suite** — Contrast, color blindness simulation, touch targets, text a11y, focus order
 - **Team Libraries** — Import and use components, styles, variables from any library
 - **Analyze Designs** — Colors, typography, spacing, find repeated patterns
-- **Lint & Accessibility** — Contrast checker, touch targets, design rules
 - **Export** — PNG, SVG, JSX, Storybook stories, CSS variables, Tailwind config
 - **Batch Operations** — Rename layers, find/replace text, create 100 variables at once
-- **Works with Claude Code** — Just ask in natural language, Claude knows all commands
+- **Works with Claude, Codex, Gemini, Crush, and OpenCode** — `fig-start` launches the selected agent with the right repo context preloaded
 
----
+This repository is an agent-friendly variant of the original workflow with launch support for Claude, Codex, Gemini, Crush, and OpenCode.
+The CLI commands stay the same: `fig-start`, `figma-cli`, and `figma-ds-cli`.
+
+## What This Fork Adds
+
+Compared with the original [`roger6vi/figma-cli`](https://github.com/roger6vi/figma-cli), this repository adds:
+
+- **Multi-agent launch flow** — `fig-start` can hand off the same repo context to Claude, Codex, Gemini, Crush, or OpenCode.
+- **Shared agent instructions** — `AGENTS.md` plus adapter files like `GEMINI.md`, `CRUSH.md`, and `OPENCODE.md` keep the operational context in-repo instead of relying on a single Claude-only file.
+- **Better packaged CLI workflow** — the package ships the Safe Mode plugin assets, the `figma-cli` wrapper, and repo-aware shell aliases.
+- **Richer read/inspect capabilities** — structured `get`, exact/coordinate `find`, `node tree --json`, and `node inspect` improve how the CLI reads Figma state through the daemon/plugin bridge.
+- **Signed release history** — signed tags plus [`CHANGELOG.md`](./CHANGELOG.md) make it easier to see what changed between the initial snapshot and the current fork release.
 
 ## shadcn/ui Component Package
 
@@ -64,13 +82,11 @@ node src/index.js shadcn list
 **30 components, 58 variants:**
 
 | Component | Variants |
-|-----------|----------|
+| --------- | -------- |
 | Button | Default, Secondary, Destructive, Outline, Ghost, Link, Small, Large, Icon |
 | Badge | Default, Secondary, Destructive, Outline |
 | Card | Full card with Header, Content, Footer |
 | Input | Default, Filled, With Label |
-| Textarea | Default |
-| Label | Default |
 | Alert | Default (info icon), Destructive (alert icon) |
 | Avatar | Default, Small |
 | Switch | On, Off |
@@ -96,21 +112,6 @@ node src/index.js shadcn list
 | Sheet | Side panel with form |
 | Hover Card | Profile card |
 
-### Real Lucide Icons
-
-Components use actual Lucide SVG icons (not placeholder shapes), fetched from the Iconify API and rendered as vector nodes in Figma:
-
-- **Pagination**: chevron-left, chevron-right, ellipsis
-- **Select**: chevron-down, chevron-up, check
-- **Accordion**: chevron-down, chevron-right
-- **Checkbox**: check
-- **Dialog/Sheet**: x (close button)
-- **Alert**: info, alert-circle
-- **Button/Icon**: plus
-- **Toggle**: bold
-- **Breadcrumb**: chevron-right
-- **Navigation Menu**: chevron-down
-
 ### Design Token Integration
 
 All components use `var:` syntax to bind directly to shadcn variables. When you add tokens with `tokens preset shadcn`, components automatically use your Light/Dark mode colors:
@@ -128,15 +129,15 @@ All components use `var:` syntax to bind directly to shadcn variables. When you 
 
 ## Why This CLI?
 
-This project includes a `CLAUDE.md` file that Claude reads automatically. It contains:
+This project includes an `AGENTS.md` file plus lightweight adapter files (`GEMINI.md`, `CRUSH.md`, `OPENCODE.md`) so the supported agents share the same workflow context. It contains:
 
 - All available commands and their syntax
 - Best practices (e.g., "use `render` for text-heavy designs")
 - Common requests mapped to solutions
 
-**Want to teach Claude new tricks?** Just update `CLAUDE.md`. No code changes needed.
+**Want to teach the agents new tricks?** Just update `AGENTS.md`. No code changes needed.
 
-**Example:** You type "Create Tailwind colors" -> Claude already knows to run `node src/index.js tokens tailwind` because it's documented in `CLAUDE.md`.
+**Example:** You type "Create Tailwind colors" → the agent already knows to run `node src/index.js tokens tailwind` because it's documented in `AGENTS.md`.
 
 ---
 
@@ -144,17 +145,20 @@ This project includes a `CLAUDE.md` file that Claude reads automatically. It con
 
 - **Node.js 18+** — `brew install node` (or [download](https://nodejs.org/))
 - **Figma Desktop** (free account works)
-- **Claude Code** ([get it here](https://www.anthropic.com/claude-code))
+- **Claude, Codex, Gemini, Crush, or OpenCode**
 - **macOS or Windows** (macOS recommended, Windows supported)
-- **macOS Full Disk Access** for Terminal (Yolo Mode only -- not needed for [Safe Mode](#-safe-mode--for-restricted-environments))
+- **macOS Full Disk Access** for Terminal (Yolo Mode only — not needed for [Safe Mode](#-safe-mode--for-restricted-environments))
+
+This project does **not** need a Figma REST API key or `FIGMA_PERSONAL_TOKEN`.
+It talks to Figma Desktop directly via CDP or the local plugin bridge.
 
 ---
 
 ## Setup
 
 ```bash
-git clone https://github.com/silships/figma-cli.git
-cd figma-cli
+git clone https://github.com/roger6vi/Figma-Cli-Agents.git
+cd Figma-Cli-Agents
 npm install
 npm run setup-alias
 source ~/.zshrc
@@ -167,19 +171,23 @@ fig-start
 ```
 
 This will:
-1. Start Figma (if not running)
-2. Connect to Figma (Yolo Mode: patches Figma once for direct access)
-3. Show your open Figma files: pick one with arrow keys
-4. Launch Claude Code with all commands pre-loaded
 
-**Done.** Talk to Claude about your Figma file.
+1. Start Figma (if not running)
+1. Connect to Figma (Yolo Mode: patches Figma once for direct access)
+1. Show your open Figma files: pick one with arrow keys
+1. Ask whether to launch Claude, Codex, Gemini, Crush, or OpenCode
+1. Launch the selected agent with the repo context pre-loaded
+
+**Done.** Talk to Claude, Codex, Gemini, Crush, or OpenCode about your Figma file.
 
 > **Note:** `fig-start` works from any directory. The setup script saves the repo location to `~/.figma-cli/config.json`.
 
 ### fig-start Options
 
+`fig-start` now includes an agent picker, so the same launcher works for Claude, Codex, Gemini, Crush, and OpenCode.
+
 | Command | Description |
-|---------|-------------|
+| ------- | ----------- |
 | `fig-start` | Yolo Mode (default), interactive file picker |
 | `fig-start --safe` | Safe Mode (plugin-based, no patching) |
 | `fig-start --setup` | Change the figma-cli repo path |
@@ -197,55 +205,43 @@ This uses a Figma plugin instead of patching. See [Safe Mode](#-safe-mode--for-r
 ### Manual Setup (without fig-start)
 
 ```bash
-cd figma-cli
+cd Figma-Cli-Agents
 claude
 ```
 
-Then tell Claude: `Connect to Figma`
+Or:
+
+```bash
+cd Figma-Cli-Agents
+codex -C .
+```
+
+Or:
+
+```bash
+cd Figma-Cli-Agents
+gemini
+```
+
+Then tell the agent: `Connect to Figma`
 
 ---
 
 ## Using It
 
-Once connected, just talk to Claude:
+Once connected, just talk to Claude, Codex, Gemini, Crush, or OpenCode:
 
-> "Add shadcn colors to my project"
+"Add shadcn colors to my project"
 
-> "Add all shadcn components"
+"Add a card component"
 
-> "Add a card component with button and input"
+"Check accessibility"
 
-> "Check accessibility"
+"Export variables as CSS"
 
-> "Export variables as CSS"
-
-The included `CLAUDE.md` teaches Claude all commands automatically. No manual required.
+The included `AGENTS.md` and `GEMINI.md` give the supported agents the command reference automatically. No manual required.
 
 **Safe Mode users:** Start the FigCli plugin each time you open Figma.
-
----
-
-## JSX Rendering with Icons
-
-The CLI includes a JSX-like syntax for creating complex layouts. Icons are rendered as real SVG vectors:
-
-```jsx
-// Real Lucide icons in JSX
-<Frame name="Nav" flex="row" items="center" gap={8} bg="var:card" p={12} rounded={8}>
-  <Icon name="lucide:home" size={20} color="var:foreground" />
-  <Text size={14} weight="medium" color="var:foreground">Home</Text>
-  <Frame grow={1} />
-  <Icon name="lucide:settings" size={20} color="var:muted-foreground" />
-</Frame>
-```
-
-Icons support:
-- Any icon from [Lucide](https://lucide.dev/icons) (2000+ icons)
-- Any icon set on [Iconify](https://iconify.design/) (150,000+ icons): `mdi:home`, `heroicons:star`, etc.
-- Variable color binding with `var:` syntax
-- Custom sizes
-
----
 
 ## Two Connection Modes
 
@@ -254,18 +250,20 @@ Icons support:
 **What it does:** Patches Figma once to enable a debug port, then connects directly.
 
 **Pros:**
+
 - Fully automatic (no manual steps after setup)
 - Slightly faster execution
-- Secure: random port, token auth, localhost only, auto-shutdown on idle
+- Secure: localhost-only CDP, daemon token auth, auto-shutdown on idle
 
 **Cons:**
+
 - Requires one-time Figma patch
 - Needs Full Disk Access on macOS (one-time)
 
-```
+```text
 ┌─────────────┐      WebSocket (CDP)      ┌─────────────┐
-│     CLI     │ <------------------------> │   Figma     │
-└─────────────┘    localhost:random port  └─────────────┘
+│     CLI     │ ◄───────────────────────► │   Figma     │
+└─────────────┘      localhost:9222       └─────────────┘
 ```
 
 ```bash
@@ -274,49 +272,55 @@ node src/index.js connect
 
 ---
 
-### 🔒 Safe Mode -- For Restricted Environments
+### 🔒 Safe Mode — For Restricted Environments
 
 **What it does:** Uses a Figma plugin to communicate. No Figma modification needed.
 
 **Pros:**
+
 - No patching, no app modification
 - Works everywhere (corporate, personal, any environment)
 - No Full Disk Access needed
 - **Full feature parity** with Yolo Mode (all commands work)
 
 **Cons:**
+
 - Start plugin manually each session (2 clicks)
 - Slightly slower than Yolo Mode
 
-```
+```text
 ┌─────────────┐     WebSocket     ┌─────────────┐     Plugin API     ┌─────────────┐
-│     CLI     │ <---------------> │   Daemon    │ <----------------> │   Plugin    │
+│     CLI     │ ◄───────────────► │   Daemon    │ ◄────────────────► │   Plugin    │
 └─────────────┘   localhost:3456  └─────────────┘                    └─────────────┘
 ```
 
 **Step 1:** Start Safe Mode
+
 ```bash
 fig-start --safe
 ```
+
 Or manually: `node src/index.js connect --safe`
 
 **Step 2:** Import plugin (one-time only)
-1. In Figma: **Plugins -> Development -> Import plugin from manifest**
-2. Select `plugin/manifest.json` from this project
-3. Click **Open**
+
+1. In Figma: **Plugins → Development → Import plugin from manifest**
+1. Select `plugin/manifest.json` from this project
+1. Click **Open**
 
 **Step 3:** Start the plugin (each session)
-1. In Figma: **Plugins -> Development -> FigCli**
-2. Terminal shows: `Plugin connected!`
 
-**Tip:** Right-click the plugin -> **Add to toolbar** for quick access.
+1. In Figma: **Plugins → Development → FigCli**
+1. Terminal shows: `Plugin connected!`
+
+**Tip:** Right-click the plugin → **Add to toolbar** for quick access.
 
 ---
 
 ### Which Mode Should I Use?
 
 | Situation | Command |
-|---|---|
+| --------- | ------- |
 | First time user | `fig-start` (Yolo Mode) |
 | Personal Mac | `fig-start` (Yolo Mode) |
 | Corporate laptop | `fig-start --safe` |
@@ -333,16 +337,17 @@ Both modes have **full feature parity**. Safe Mode uses native Figma Plugin API 
 
 If you see `EPERM: operation not permitted, open '.../app.asar'`:
 
-**1. Grant Full Disk Access to Terminal**
+### 1. Grant Full Disk Access to Terminal
 
 macOS blocks file access without this permission, even with sudo.
 
-1. Open **System Settings** -> **Privacy & Security** -> **Full Disk Access**
-2. Click the **+** button
-3. Add **Terminal** (or iTerm, VS Code, Warp, etc.)
-4. **Restart Terminal completely** (quit and reopen)
+1. Open **System Settings** → **Privacy & Security** → **Full Disk Access**
+1. Click the **+** button
+1. Add **Terminal** (or iTerm, VS Code, Warp, etc.)
+1. **Restart Terminal completely** (quit and reopen)
 
-**2. Make sure Figma is completely closed**
+### 2. Make sure Figma is completely closed
+
 ```bash
 # Check if Figma is still running
 ps aux | grep -i figma
@@ -351,14 +356,15 @@ ps aux | grep -i figma
 killall Figma
 ```
 
-**3. Run connect again**
+### 3. Run connect again
+
 ```bash
 node src/index.js connect
 ```
 
 If still failing, try with sudo: `sudo node src/index.js connect`
 
-**4. Manual patch (last resort)**
+### 4. Manual patch (last resort)
 
 If nothing works, you can patch manually:
 
@@ -407,11 +413,18 @@ npm install
 
 Connects to Figma Desktop via Chrome DevTools Protocol (CDP). No API key needed because it uses your existing Figma session.
 
-```
+There are two local connection paths:
+
+- **Yolo Mode**: direct CDP connection on `localhost:9222`
+- **Safe Mode**: local daemon on `localhost:3456` plus the FigCli plugin bridge
+
+Neither mode uses the Figma REST API or requires `FIGMA_PERSONAL_TOKEN`.
+
+```text
 ┌─────────────┐      WebSocket (CDP)      ┌─────────────┐
-│ figma-ds-cli │ <------------------------> │   Figma     │
-│    (CLI)    │   localhost:9222-9322     │  Desktop    │
-└─────────────┘      (random port)        └─────────────┘
+│ figma-ds-cli │ ◄───────────────────────► │   Figma     │
+│    (CLI)    │      localhost:9222       │  Desktop    │
+└─────────────┘                            └─────────────┘
 ```
 
 ### Security
@@ -422,9 +435,10 @@ The CLI runs a local daemon for faster command execution. Security features:
 - **No CORS headers**: Blocks cross-origin browser requests
 - **Host header validation**: Only accepts localhost/127.0.0.1
 - **Idle timeout**: Auto-shutdown after 10 minutes of inactivity (configurable)
-- **Random port**: CDP uses a random port between 9222-9322 per session
+- **Fixed local ports**: CDP uses `9222`; Safe Mode daemon uses `3456`
 
-Token is stored at `~/.figma-ds-cli/.daemon-token` with owner-only permissions (0600).
+The daemon session token is stored in the OS temp directory with owner-only permissions (0600).
+On macOS/Linux this is typically `/tmp/.figma-daemon-token`.
 
 ---
 
@@ -435,11 +449,30 @@ Token is stored at `~/.figma-ds-cli/.daemon-token` with owner-only permissions (
 - **30 components, 58 variants** matching official shadcn/ui specs
 - Real **Lucide SVG icons** (chevrons, check, x, plus, info, alert-circle, bold, ellipsis)
 - **Design token binding** via `var:` syntax (auto-binds to shadcn Light/Dark mode variables)
-- Components: Button (9), Badge (4), Card, Input (3), Textarea, Label, Alert (2), Avatar (2), Switch (2), Separator (2), Skeleton (3), Progress (2), Toggle (2), Checkbox (2), Tabs, Table, Radio Group (3), Select (3), Slider, Breadcrumb, Pagination, Kbd (2), Spinner (2), Tooltip, Dialog, Dropdown Menu, Accordion, Navigation Menu, Sheet, Hover Card
+
+### Blocks (Pre-built UI Layouts)
+
+- **dashboard-01** — Full analytics dashboard (sidebar, stats cards, area chart, data table)
+- All blocks bound to shadcn variables (Light/Dark mode compatible)
+- `blocks list` — Show available blocks; `blocks create <id>` — Create in Figma
+
+### AI Verification
+
+- **verify** — Take a small screenshot of selection for AI review (returns base64, max 2000px)
+- Use after every component creation to confirm correct output
+
+### Accessibility Suite (a11y)
+
+- **contrast** — WCAG AA/AAA contrast ratio checks for all text/background pairs
+- **vision** — Color blindness simulation (protanopia, deuteranopia, tritanopia, achromatopsia)
+- **touch** — Touch target size audit (WCAG 2.5.8: min 24×24, recommended 44×44)
+- **text** — Text accessibility checks (min sizes, line height, paragraph spacing)
+- **focus** — Reading/focus order of interactive elements
+- **audit** — Full accessibility audit (all of the above combined)
 
 ### Design Tokens & Variables
 
-- **Color presets** -- shadcn (276 vars with Light/Dark mode), Radix UI (156 vars)
+- **Color presets** — shadcn (276 vars with Light/Dark mode), Radix UI (156 vars)
 - Create Tailwind CSS color palettes (all 22 color families, 50-950 shades)
 - Create and manage variable collections
 - **Variable modes** (Light/Dark/Mobile) with per-mode values
@@ -460,16 +493,6 @@ Token is stored at `~/.figma-ds-cli/.daemon-token` with owner-only permissions (
 - Components from frames
 - Component instances
 - **Component sets with variants**
-
-### JSX Rendering
-
-- **JSX-like syntax** for complex layouts (`<Frame>`, `<Text>`, `<Icon>`, `<Slot>`)
-- **Real Lucide/Iconify icons** rendered as SVG vectors (not placeholders)
-- **Variable binding** with `var:name` syntax for fills, strokes, text colors, icon colors
-- Auto-layout props: `flex`, `gap`, `p`/`px`/`py`, `justify`, `items`, `grow`, `wrap`
-- Sizing: `w`/`h` (fixed), `w="fill"` (stretch), auto-hug
-- Appearance: `bg`, `stroke`, `strokeWidth`, `strokeAlign`, `rounded`, `shadow`, `opacity`, `overflow`
-- **Slots** for component content areas
 
 ### Modify Elements
 
@@ -548,25 +571,25 @@ Token is stored at `~/.figma-ds-cli/.daemon-token` with owner-only permissions (
 
 ### Query & Analysis
 
-- **Analyze colors** -- usage frequency, variable bindings
-- **Analyze typography** -- all font combinations used
-- **Analyze spacing** -- gap/padding values, grid compliance
-- **Find clusters** -- detect repeated patterns (potential components)
-- **Visual diff** -- compare two nodes
-- **Create diff patch** -- structural patches between versions
+- **Analyze colors** — usage frequency, variable bindings
+- **Analyze typography** — all font combinations used
+- **Analyze spacing** — gap/padding values, grid compliance
+- **Find clusters** — detect repeated patterns (potential components)
+- **Visual diff** — compare two nodes
+- **Create diff patch** — structural patches between versions
 
 ### Lint & Accessibility
 
 - **Design linting** with 8+ rules:
-  - `no-default-names` -- detect unnamed layers
-  - `no-deeply-nested` -- flag excessive nesting
-  - `no-empty-frames` -- find empty frames
-  - `prefer-auto-layout` -- suggest auto-layout
-  - `no-hardcoded-colors` -- check variable usage
-  - `color-contrast` -- WCAG AA/AAA compliance
-  - `touch-target-size` -- minimum 44x44 check
-  - `min-text-size` -- minimum 12px text
-- **Accessibility snapshot** -- extract interactive elements tree
+  - `no-default-names` — detect unnamed layers
+  - `no-deeply-nested` — flag excessive nesting
+  - `no-empty-frames` — find empty frames
+  - `prefer-auto-layout` — suggest auto-layout
+  - `no-hardcoded-colors` — check variable usage
+  - `color-contrast` — WCAG AA/AAA compliance
+  - `touch-target-size` — minimum 44x44 check
+  - `min-text-size` — minimum 12px text
+- **Accessibility snapshot** — extract interactive elements tree
 
 ### Component Variants
 
@@ -605,7 +628,7 @@ Token is stored at `~/.figma-ds-cli/.daemon-token` with owner-only permissions (
 
 ### Not Supported (requires REST API)
 
-- Comments (read/write/delete) -- requires Figma API key
+- Comments (read/write/delete) — requires Figma API key
 - Version history
 - Team/project management
 
@@ -613,13 +636,14 @@ Token is stored at `~/.figma-ds-cli/.daemon-token` with owner-only permissions (
 
 ## Author
 
-**[Sil Bormueller](https://www.linkedin.com/in/silbormueller/)** -- [intodesignsystems.com](https://intodesignsystems.com)
+**[Sil Bormüller](https://www.linkedin.com/in/silbormueller/)** — [intodesignsystems.com](https://intodesignsystems.com)
 
 ## Powered By
 
-This CLI is built on top of **[figma-use](https://github.com/dannote/figma-use)** by [dannote](https://github.com/dannote) -- an excellent Figma CLI with JSX rendering, XPath queries, design linting, and much more.
+This CLI is built on top of **[figma-use](https://github.com/dannote/figma-use)** by [dannote](https://github.com/dannote) — an excellent Figma CLI with JSX rendering, XPath queries, design linting, and much more.
 
 In **Yolo Mode**, we use figma-use for:
+
 - JSX rendering (`render` command)
 - Node operations (`node tree`, `node to-component`, etc.)
 - Design analysis (`analyze colors`, `analyze typography`)
