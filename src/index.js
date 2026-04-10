@@ -8739,4 +8739,87 @@ bool
     }
   });
 
+// ============ SECTIONS ============
+
+const section = program
+  .command('section')
+  .description('Section operations (create, list)');
+
+section
+  .command('create <name>')
+  .description('Create a section on canvas')
+  .option('-x, --x <n>', 'X position', '0')
+  .option('-y, --y <n>', 'Y position', '0')
+  .option('-w, --w <n>', 'Width', '500')
+  .option('-h, --h <n>', 'Height', '500')
+  .option('-c, --color <hex>', 'Section fill color')
+  .action(async (name, options) => {
+    await checkConnection();
+    const spinner = ora(`Creating section "${name}"...`).start();
+    const x = parseInt(options.x) || 0;
+    const y = parseInt(options.y) || 0;
+    const w = parseInt(options.w) || 500;
+    const h = parseInt(options.h) || 500;
+    const colorCode = options.color ? `
+      const hex = ${JSON.stringify(options.color)}.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16) / 255;
+      const g = parseInt(hex.substring(2, 4), 16) / 255;
+      const b = parseInt(hex.substring(4, 6), 16) / 255;
+      section.fills = [{ type: 'SOLID', color: { r, g, b } }];
+    ` : '';
+    const code = `(async () => {
+      const section = figma.createSection();
+      section.name = ${JSON.stringify(name)};
+      section.x = ${x};
+      section.y = ${y};
+      section.resize(${w}, ${h});
+      ${colorCode}
+      figma.currentPage.selection = [section];
+      figma.viewport.scrollAndZoomIntoView([section]);
+      return { id: section.id, name: section.name, x: section.x, y: section.y, w: ${w}, h: ${h} };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      spinner.succeed(`Section created: "${result.name}"`);
+      console.log(chalk.gray(`  ID: ${result.id} | Position: (${result.x}, ${result.y}) | Size: ${result.w}x${result.h}`));
+    } catch (e) {
+      spinner.fail('Create section failed: ' + e.message);
+    }
+  });
+
+section
+  .command('list')
+  .description('List all sections on current page')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Finding sections...').start();
+    const code = `(async () => {
+      const sections = figma.currentPage.findAll(n => n.type === 'SECTION');
+      return sections.map(s => ({
+        id: s.id,
+        name: s.name,
+        x: Math.round(s.x),
+        y: Math.round(s.y),
+        w: Math.round(s.width),
+        h: Math.round(s.height),
+        children: s.children.length
+      }));
+    })()`;
+    try {
+      const result = await fastEval(code);
+      spinner.stop();
+      if (result.length === 0) {
+        console.log(chalk.yellow('No sections found on current page'));
+      } else {
+        console.log(chalk.cyan(`\nFound ${result.length} section${result.length > 1 ? 's' : ''}:\n`));
+        result.forEach(s => {
+          console.log(`  ${chalk.white(s.name)} ${chalk.gray(`(${s.id})`)}`);
+          console.log(chalk.gray(`    Position: (${s.x}, ${s.y}) | Size: ${s.w}x${s.h} | Children: ${s.children}`));
+        });
+      }
+    } catch (e) {
+      spinner.fail('List sections failed: ' + e.message);
+    }
+  });
+
 program.parse();
