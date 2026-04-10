@@ -16,7 +16,6 @@
 
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { timingSafeEqual } from 'crypto';
 import { readFileSync, statSync, writeFileSync, unlinkSync, readdirSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
@@ -119,55 +118,6 @@ function validateRequest(req) {
   }
 
   return null; // Valid
-}
-
-function timingSafeTokenEqual(candidate, expected) {
-  const a = Buffer.from(String(candidate || ''), 'utf8');
-  const b = Buffer.from(String(expected || ''), 'utf8');
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function getWebSocketProtocols(req) {
-  return String(req.headers['sec-websocket-protocol'] || '')
-    .split(',')
-    .map(protocol => protocol.trim())
-    .filter(Boolean);
-}
-
-function validatePluginUpgrade(req) {
-  const hostError = validateHostHeader(req);
-  if (hostError) return { statusCode: 403, reason: hostError };
-
-  if (!SESSION_TOKEN) return { statusCode: 401, reason: 'No session token configured' };
-
-  const protocols = getWebSocketProtocols(req);
-  if (!protocols.includes('figcli-v1')) {
-    return { statusCode: 401, reason: 'Missing figcli-v1 WebSocket subprotocol' };
-  }
-
-  const token = protocols.find(protocol => protocol !== 'figcli-v1');
-  if (!token || !timingSafeTokenEqual(token, SESSION_TOKEN)) {
-    return { statusCode: 401, reason: 'Invalid or missing plugin token' };
-  }
-
-  return null;
-}
-
-function rejectUpgrade(socket, statusCode, reason) {
-  const body = `${reason}\n`;
-  socket.write(
-    `HTTP/1.1 ${statusCode} ${statusCode === 401 ? 'Unauthorized' : statusCode === 403 ? 'Forbidden' : 'Conflict'}\r\n` +
-    'Connection: close\r\n' +
-    'Content-Type: text/plain; charset=utf-8\r\n' +
-    `Content-Length: ${Buffer.byteLength(body)}\r\n` +
-    '\r\n' +
-    body
-  );
-  socket.destroy();
-}
-
-function closePolicyViolation(ws, reason) {
-  try { ws.close(1008, reason); } catch {}
 }
 
 // ============ IDLE TIMEOUT ============
@@ -548,53 +498,10 @@ async function handleRequest(req, res) {
 
 const httpServer = createServer(handleRequest);
 
-// WebSocket server for plugin connections. Auth happens in httpServer.on('upgrade')
-// before a socket becomes the active plugin connection.
-const wss = new WebSocketServer({
-  noServer: true,
-  handleProtocols(protocols) {
-    return protocols.has('figcli-v1') ? 'figcli-v1' : false;
-  }
-});
+// WebSocket server for plugin connections
+const wss = new WebSocketServer({ server: httpServer, path: '/plugin' });
 
-httpServer.on('upgrade', (req, socket, head) => {
-  resetIdleTimer();
-
-  let pathname = '';
-  try {
-    pathname = new URL(req.url, 'http://127.0.0.1').pathname;
-  } catch {
-    rejectUpgrade(socket, 403, 'Invalid WebSocket URL');
-    return;
-  }
-
-  if (pathname !== '/plugin') {
-    rejectUpgrade(socket, 403, 'Invalid WebSocket path');
-    return;
-  }
-
-  const authError = validatePluginUpgrade(req);
-  if (authError) {
-    rejectUpgrade(socket, authError.statusCode, authError.reason);
-    return;
-  }
-
-  if (pluginWs && (pluginWs.readyState === WebSocket.OPEN || pluginWs.readyState === WebSocket.CONNECTING)) {
-    rejectUpgrade(socket, 409, 'Plugin already connected');
-    return;
-  }
-
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req);
-  });
-});
-
-wss.on('connection', (ws, req) => {
-  if (pluginWs && pluginWs !== ws && pluginWs.readyState === WebSocket.OPEN) {
-    closePolicyViolation(ws, 'Plugin already connected');
-    return;
-  }
-
+wss.on('connection', (ws) => {
   console.log('[daemon] Plugin connected (Safe Mode)');
   pluginWs = ws;
   resetIdleTimer(); // Plugin connection counts as activity

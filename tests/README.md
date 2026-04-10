@@ -18,7 +18,6 @@ SDDs that added coverage: SDD 1 (release blockers), SDD 2 (daemon auth), SDD 3 (
 | `node-inspect.test.js` | Node inspection and selection commands |
 | `url-commands.test.js` | URL command hardening — rejects `javascript:`, `file:`, `ftp:`, and malformed URLs before any network I/O |
 | `security.test.js` | Config file permissions (0600/0700), secret redaction |
-| `daemon-auth.test.js` | Daemon authentication handshake, token validation (SDD 2) |
 | `daemon-eval-timeout.test.js` | Daemon eval timeout handling and error propagation |
 | `safe-mode.test.js` | Safe Mode plugin handshake, connection guard, fallback behavior (SDD 3) |
 | `project-isolation.test.js` | Per-file project directory isolation and resolution (SDD 3) |

@@ -56,9 +56,6 @@ function generateDaemonToken() {
 }
 
 // Return existing daemon token if valid, otherwise create a new one.
-// Token persistence across daemon restarts is critical for plugin pairing UX:
-// the plugin stores the token in figma.clientStorage once and reuses it forever
-// unless the user explicitly rotates via --rotate-token.
 function getOrCreateDaemonToken() {
   const existing = getDaemonToken();
   if (existing && /^[a-f0-9]{64}$/i.test(existing)) {
@@ -264,9 +261,8 @@ function startDaemon(forceRestart = false, mode = 'auto') {
     return true; // Already running
   }
 
-  // Reuse existing daemon token across restarts so the plugin does not need
-  // to re-pair on every fig-start --safe. Only regenerated when the file is
-  // missing or corrupted; explicit rotation is via `connect --safe --rotate-token`.
+  // Ensure an HTTP auth token exists (used by X-Daemon-Token header on /exec,
+  // /health, etc.). Reused across restarts; regenerated only if missing.
   getOrCreateDaemonToken();
 
   const daemonScript = join(dirname(fileURLToPath(import.meta.url)), 'daemon.js');
@@ -1137,7 +1133,6 @@ program
   .command('connect')
   .description('Connect to Figma Desktop')
   .option('--safe', 'Use Safe Mode (plugin-based, no patching required)')
-  .option('--rotate-token', 'Generate a fresh daemon pairing token (requires re-pairing the plugin)')
   .action(async (options) => {
     // Fun welcome message
     console.log(chalk.hex('#FF6B35')('\n  ✨ Hey designer! ') + chalk.white("Don't be afraid of the terminal!"));
@@ -1149,20 +1144,8 @@ program
     if (options.safe) {
       console.log(chalk.hex('#4ECDC4')('  🔒 Safe Mode ') + chalk.gray('(plugin-based, no patching required)\n'));
 
-      // Explicit token rotation before anything else so the rest of the flow
-      // sees the new token.
-      if (options.rotateToken) {
-        generateDaemonToken();
-        console.log(chalk.yellow('  🔄 Daemon token rotated. The plugin must be re-paired with the new token.\n'));
-      }
-
       // Stop any existing daemon
       stopDaemon();
-
-      // Track whether the token pre-existed before this run so we can tell
-      // the user whether they need to pair for the first time or not.
-      const preExistingToken = getDaemonToken();
-      const tokenIsFresh = !preExistingToken || options.rotateToken;
 
       // Start daemon in plugin mode
       const daemonSpinner = ora('Starting daemon in Safe Mode...').start();
@@ -1180,18 +1163,6 @@ program
         return;
       }
 
-      const pairingToken = getDaemonToken();
-      if (tokenIsFresh) {
-        console.log(chalk.white.bold('\n  Pairing token for FigCli plugin:\n'));
-        console.log(chalk.black.bgYellow(`  ${pairingToken}  `));
-        console.log(chalk.gray('\n  Paste this token into the FigCli plugin window ONCE.'));
-        console.log(chalk.gray('  The plugin stores it per-user and reuses it on every future run.'));
-        console.log(chalk.gray('  To rotate the token: ') + chalk.cyan('fig-start --safe --rotate-token\n'));
-      } else {
-        console.log(chalk.gray('  ℹ Using existing daemon token. If the plugin is already paired, it will connect automatically.'));
-        console.log(chalk.gray('  To force re-pairing: ') + chalk.cyan('fig-start --safe --rotate-token\n'));
-      }
-
       // Show plugin setup instructions
       console.log(chalk.hex('#FF6B35')('\n  ┌─────────────────────────────────────────────────────┐'));
       console.log(chalk.hex('#FF6B35')('  │') + chalk.white.bold('  Setup the FigCli plugin                           ') + chalk.hex('#FF6B35')('│'));
@@ -1206,18 +1177,15 @@ program
       console.log(chalk.cyan('  4. ') + chalk.white('Click ') + chalk.yellow('Open') + chalk.white(' — plugin is now installed!\n'));
 
       console.log(chalk.hex('#FF6B35').bold('  ⚠ If you upgraded the CLI, you MUST re-import the plugin'));
-      console.log(chalk.gray('    so Figma picks up the new plugin code. Stored pairing survives re-import.\n'));
+      console.log(chalk.gray('    so Figma picks up the new plugin code.\n'));
 
       console.log(chalk.white.bold('  EACH SESSION:\n'));
       console.log(chalk.cyan('  → ') + chalk.white('In Figma: ') + chalk.yellow('Plugins → Development → FigCli\n'));
 
       console.log(chalk.gray('  💡 Tip: Right-click plugin → "Add to toolbar" for one-click access\n'));
 
-      // Wait for plugin connection. 120-second window gives the user enough
-      // time to open Figma, launch the plugin, and paste the pairing token
-      // on a cold first-pair scenario. On subsequent runs with a paired
-      // plugin, this loop exits on the first iteration.
-      const PLUGIN_WAIT_SECONDS = 120;
+      // Wait for plugin connection
+      const PLUGIN_WAIT_SECONDS = 30;
       const pluginSpinner = ora(`Waiting for plugin connection (${PLUGIN_WAIT_SECONDS}s)...`).start();
       let pluginConnected = false;
       for (let i = 0; i < PLUGIN_WAIT_SECONDS; i++) {
@@ -1243,8 +1211,7 @@ program
         pluginSpinner.fail('Plugin not detected. Start the FigCli plugin in Figma and try again.');
         console.error(chalk.red(`\n  ✗ Safe Mode failed: plugin did not connect within ${PLUGIN_WAIT_SECONDS} seconds.\n`));
         console.error(chalk.yellow('  → Open Figma Desktop, run the FigCli plugin, then re-run:') + chalk.white(' fig-start --safe'));
-        console.error(chalk.yellow('  → If you recently upgraded, re-import the plugin from:') + chalk.white(` ${repoPluginPath}`));
-        console.error(chalk.yellow('  → If the plugin is stuck scanning, click ') + chalk.white('Re-pair') + chalk.yellow(' in the plugin window\n'));
+        console.error(chalk.yellow('  → If you recently upgraded, re-import the plugin from:') + chalk.white(` ${repoPluginPath}\n`));
         process.exit(1);
       }
 
