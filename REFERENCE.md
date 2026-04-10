@@ -131,9 +131,12 @@ node src/index.js align center                 # Align items
 ```bash
 node src/index.js find "Button"                # Find by name
 node src/index.js find "Card" -t FRAME         # Filter by type
+node src/index.js find "DPAG" --exact --coords # Exact match with coordinates
 node src/index.js select "1:234"               # Select node
-node src/index.js get                          # Get selection props
+node src/index.js get                          # Get structured snapshot for selection
 node src/index.js get "1:234"                  # Get specific node
+node src/index.js get "1:234" -d 1             # Include child nodes up to depth 1
+node src/index.js get --shared a11y            # Include shared plugin data namespace
 ```
 
 ## Canvas Operations
@@ -159,6 +162,10 @@ node src/index.js delete "1:234"               # Delete by ID
 ```bash
 node src/index.js node tree                    # Show tree structure
 node src/index.js node tree "1:234" -d 5       # Deeper depth
+node src/index.js node tree --coords           # Include absolute and local coordinates
+node src/index.js node tree --json             # Raw structured tree snapshot
+node src/index.js node inspect                 # Inspect selection or current page
+node src/index.js node inspect "1:234" --shared a11y
 node src/index.js node bindings                # Show variable bindings
 node src/index.js node to-component "1:234"    # Convert to component
 node src/index.js node delete "1:234"          # Delete by ID
@@ -294,12 +301,13 @@ node src/index.js combos --no-boolean      # Exclude boolean properties
 ```
 
 **How it works:**
+
 1. Select a component set (or any variant/instance)
-2. Run `combos` to generate all combinations
-3. Creates **individual components** directly on canvas (no container frame)
-4. Each component named: `Button/Small/Default`, `Button/Small/Hover`, etc.
-5. Arranged in a grid (last property = columns, rest = rows)
-6. Row/column labels added automatically (use `--no-labels` to skip)
+1. Run `combos` to generate all combinations
+1. Creates **individual components** directly on canvas (no container frame)
+1. Each component named: `Button/Small/Default`, `Button/Small/Hover`, etc.
+1. Arranged in a grid (last property = columns, rest = rows)
+1. Row/column labels added automatically (use `--no-labels` to skip)
 
 ## Size Variants (sizes)
 
@@ -314,10 +322,11 @@ node src/index.js sizes --gap 60              # Custom gap
 ```
 
 **How it works:**
+
 1. Select a component or frame
-2. Run `sizes --base <size>` to specify which size it is
-3. Creates Small, Medium, Large variants with proportional scaling
-4. Scales: dimensions, font sizes, padding, corner radius, gaps
+1. Run `sizes --base <size>` to specify which size it is
+1. Creates Small, Medium, Large variants with proportional scaling
+1. Scales: dimensions, font sizes, padding, corner radius, gaps
 
 ## JavaScript Eval
 
@@ -346,7 +355,8 @@ node src/index.js run /tmp/script.js
 **Text:** `<Text size={18} weight="bold" color="#000" font="Inter">Hello</Text>`
 
 **WRONG vs RIGHT:**
-```
+
+```text
 layout="horizontal"  →  flex="row"
 padding={24}         →  p={24}
 fill="#fff"          →  bg="#fff"
@@ -356,6 +366,7 @@ cornerRadius={12}    →  rounded={12}
 ## Advanced Examples
 
 ### Switch to Dark Mode
+
 ```javascript
 node src/index.js eval "
 const node = figma.getNodeById('1:234');
@@ -389,6 +400,7 @@ if (found) {
 ```
 
 ### Create Component Instance
+
 ```javascript
 node src/index.js eval "(function() {
   const comp = figma.currentPage.findOne(n => n.type === 'COMPONENT' && n.name === 'Button');
@@ -401,6 +413,7 @@ node src/index.js eval "(function() {
 ```
 
 ### Smart Positioning
+
 ```javascript
 let smartX = 0;
 figma.currentPage.children.forEach(n => { smartX = Math.max(smartX, n.x + n.width); });
@@ -412,11 +425,13 @@ frame.x = smartX;
 ## Safe Mode
 
 Safe Mode uses a plugin-based connection instead of CDP (Chrome DevTools Protocol). Use it when:
+
 - Company MacBook with restricted privacy settings
 - Full Disk Access permission not available
 - Prefer no Figma modification
 
 ### Connection
+
 ```bash
 node src/index.js connect --safe
 ```
@@ -426,7 +441,7 @@ Then in Figma: Plugins → Development → FigCli
 ### Differences from Yolo Mode
 
 | Feature | Yolo Mode | Safe Mode |
-|---------|-----------|-----------|
+| ------- | --------- | --------- |
 | Connection | Direct CDP | Plugin bridge |
 | Setup | Patches Figma once | Start plugin each session |
 | Speed | ~10x faster | Standard |
@@ -437,12 +452,13 @@ Then in Figma: Plugins → Development → FigCli
 All commands work in both modes. In Safe Mode, commands use native Figma API instead of figma-use:
 
 | Command | Yolo Mode | Safe Mode |
-|---------|-----------|-----------|
+| ------- | --------- | --------- |
 | `render` | figma-use | daemon (native API) |
 | `render-batch` | figma-use | daemon (native API) |
 | `node to-component` | figma-use | native API |
 | `node delete` | figma-use | native API |
-| `node tree` | figma-use | native API |
+| `node tree` | native API | native API |
+| `node inspect` | native API | native API |
 | `node bindings` | figma-use | native API |
 | `lint` | figma-use | native API |
 | `analyze colors/typography/spacing/clusters` | figma-use | native API |
@@ -469,4 +485,169 @@ node src/index.js render '<Frame>...</Frame>'
 node src/index.js render '<Frame>...</Frame>'
 ```
 
-Or use `eval` with native Figma API for maximum control (see "Complex Components" in CLAUDE.md).
+Or use `eval` with native Figma API for maximum control (see "Complex Components" in AGENTS.md).
+
+---
+
+## Styles
+
+Manage paint, text, effect, and grid styles for design systems.
+
+```bash
+node src/index.js style list                   # List all styles
+node src/index.js style list -t paint          # Filter by type (paint/text/effect/grid)
+node src/index.js style create-paint "Primary" --color "#3b82f6"
+node src/index.js style create-text "Heading/H1" --size 32 --weight "Bold" --font "Inter"
+node src/index.js style create-effect "Shadow/Medium" --blur 8 --y 4 --opacity 0.2
+node src/index.js style apply "S:abc123"       # Apply style to selection
+node src/index.js style delete "S:abc123"      # Delete style
+```
+
+## Undo and Version History
+
+```bash
+node src/index.js undo                         # Undo last action
+node src/index.js undo commit                  # Create checkpoint in undo history
+node src/index.js undo save "Before redesign" --description "Snapshot before header changes"
+```
+
+## Boolean Operations
+
+Select 2+ nodes first, then combine:
+
+```bash
+node src/index.js bool union       # Merge shapes
+node src/index.js bool subtract    # First shape minus rest
+node src/index.js bool intersect   # Keep overlapping area
+node src/index.js bool exclude     # Remove overlapping area
+```
+
+## Sections
+
+Organize canvas with section containers.
+
+```bash
+node src/index.js section create "Header Components" --w 800 --h 600
+node src/index.js section list
+```
+
+## Team Library
+
+Import components, variables, and styles from team libraries.
+
+```bash
+node src/index.js library list                              # List available library collections
+node src/index.js library variables "collection-key"       # List variables in a collection
+node src/index.js library import-var "variable-key"        # Import variable from library
+node src/index.js library import-component "component-key" # Import component from library
+node src/index.js library import-style "style-key"         # Import style from library
+```
+
+## Variable Advanced Operations
+
+```bash
+node src/index.js var alias "sourceVarId" "targetVarId"    # Create variable alias
+node src/index.js var bind-prop "nodeId" "propName" "variableId"  # Bind component property
+node src/index.js var extend "collectionKey" "Local Overrides"    # Extend library collection locally
+node src/index.js var modes "collectionId"                  # List modes of a collection
+node src/index.js var add-mode "collectionId" "Dark"        # Add mode to collection
+```
+
+## Annotations
+
+Add annotations to nodes for documentation and review.
+
+```bash
+node src/index.js annotate list                             # List annotation categories
+node src/index.js annotate add-category "Review" --color blue
+node src/index.js annotate set "Needs accessibility review" --category "cat-id"
+node src/index.js annotate get                              # Read annotations from selection
+```
+
+## Pages
+
+Manage document pages.
+
+```bash
+node src/index.js page list                    # List all pages
+node src/index.js page switch "Components"     # Switch to page by name
+node src/index.js page create "Tokens"         # Create new page
+```
+
+## Viewport
+
+Control the viewport position and zoom.
+
+```bash
+node src/index.js viewport zoom fit            # Zoom to fit all content
+node src/index.js viewport zoom selection      # Zoom to selection
+node src/index.js viewport zoom 0.5            # Set specific zoom level
+node src/index.js viewport center "nodeId"     # Center on a node
+```
+
+## Project Isolation
+
+Each Figma file gets its own folder at `~/.figma-cli/projects/<slug>/`.
+
+```bash
+node src/index.js project list                 # List all projects
+node src/index.js project info                 # Show current project info (requires FIGMA_PROJECT_DIR)
+node src/index.js project resolve --title "My File" --file-key "ABC123"
+```
+
+Project directory structure:
+
+```text
+~/.figma-cli/projects/my-design-system/
+  project.json     # Manifest (title, fileKey, url, createdAt)
+  scripts/         # eval -f scripts (auto-resolved)
+  exports/         # Screenshots and exports (auto-redirected)
+  skills/          # Project-specific instructions (.md) and scripts (.js)
+```
+
+## Skills
+
+Skills are `.md` or `.js` files that provide instructions or reusable scripts.
+
+```bash
+node src/index.js skills list                  # List all skills (global + project)
+node src/index.js skills show naming-conventions  # Read a skill
+```
+
+Directories:
+
+- Global: `~/.figma-cli/skills/`
+- Project: `~/.figma-cli/projects/<slug>/skills/`
+
+## AI Verification
+
+```bash
+node src/index.js verify                       # Screenshot of selection (base64)
+node src/index.js verify "123:456"             # Screenshot of specific node
+node src/index.js verify --save                # Save as PNG to /tmp/
+node src/index.js verify --scale 1             # Full scale (default: 0.5)
+node src/index.js verify --max 1000            # Max dimension in pixels
+```
+
+## Blocks
+
+Pre-built UI layouts bound to shadcn variables.
+
+```bash
+node src/index.js blocks list                  # List available blocks
+node src/index.js blocks create dashboard-01   # Create dashboard in Figma
+```
+
+## Accessibility Suite
+
+WCAG compliance checks for selections or the full page.
+
+```bash
+node src/index.js a11y contrast                # Check WCAG contrast ratios
+node src/index.js a11y contrast "nodeId"       # Specific node
+node src/index.js a11y vision                  # Color blindness simulation
+node src/index.js a11y touch                   # Touch target sizes (WCAG 2.5.8)
+node src/index.js a11y text                    # Text accessibility checks
+node src/index.js a11y focus                   # Reading/focus order
+node src/index.js a11y audit                   # Full audit (all of the above)
+```
