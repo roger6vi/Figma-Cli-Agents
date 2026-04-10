@@ -83,6 +83,7 @@ figma.ui.onmessage = async (msg) => {
   if (msg.type === 'auth-failed') {
     await figma.clientStorage.deleteAsync('daemonToken');
     figma.ui.resize(PAIRING_SIZE.width, PAIRING_SIZE.height);
+    figma.ui.postMessage({ type: 'pairing-required' });
     figma.notify('Figma DS CLI pairing expired. Paste the current token.', { error: true });
     return;
   }
