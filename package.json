@@ -6,12 +6,19 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "figma-ds-cli": "src/index.js",
+    "figma-cli": "bin/figma-cli",
+    "figma-ds-cli": "bin/figma-cli",
     "fig-start": "bin/fig-start"
   },
   "files": [
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "GEMINI.md",
+    "CRUSH.md",
+    "OPENCODE.md",
     "src",
-    "bin"
+    "bin",
+    "plugin"
   ],
   "keywords": [
     "figma",
@@ -22,11 +29,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/silships/figma-cli.git"
+    "url": "git+https://github.com/roger6vi/Figma-Cli-Agents.git"
   },
   "homepage": "https://intodesignsystems.com",
   "bugs": {
-    "url": "https://github.com/silships/figma-cli/issues"
+    "url": "https://github.com/roger6vi/Figma-Cli-Agents/issues"
   },
   "scripts": {
     "setup-alias": "bash bin/setup-alias.sh",
