@@ -8629,4 +8629,114 @@ undo
     }
   });
 
+// ============ BOOLEAN OPS ============
+
+const bool = program
+  .command('bool')
+  .description('Boolean operations on selected nodes (union, subtract, intersect, exclude)');
+
+bool
+  .command('union')
+  .description('Union selected nodes')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Performing union...').start();
+    const code = `(async () => {
+      const sel = figma.currentPage.selection;
+      if (sel.length < 2) return { error: 'Select at least 2 nodes' };
+      const parent = sel[0].parent;
+      const result = figma.union(sel, parent);
+      figma.currentPage.selection = [result];
+      return { id: result.id, name: result.name };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Union created: ${result.name} (${result.id})`);
+      }
+    } catch (e) {
+      spinner.fail('Union failed: ' + e.message);
+    }
+  });
+
+bool
+  .command('subtract')
+  .description('Subtract selected nodes (first minus rest)')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Performing subtract...').start();
+    const code = `(async () => {
+      const sel = figma.currentPage.selection;
+      if (sel.length < 2) return { error: 'Select at least 2 nodes' };
+      const parent = sel[0].parent;
+      const result = figma.subtract(sel, parent);
+      figma.currentPage.selection = [result];
+      return { id: result.id, name: result.name };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Subtract created: ${result.name} (${result.id})`);
+      }
+    } catch (e) {
+      spinner.fail('Subtract failed: ' + e.message);
+    }
+  });
+
+bool
+  .command('intersect')
+  .description('Intersect selected nodes')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Performing intersect...').start();
+    const code = `(async () => {
+      const sel = figma.currentPage.selection;
+      if (sel.length < 2) return { error: 'Select at least 2 nodes' };
+      const parent = sel[0].parent;
+      const result = figma.intersect(sel, parent);
+      figma.currentPage.selection = [result];
+      return { id: result.id, name: result.name };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Intersect created: ${result.name} (${result.id})`);
+      }
+    } catch (e) {
+      spinner.fail('Intersect failed: ' + e.message);
+    }
+  });
+
+bool
+  .command('exclude')
+  .description('Exclude selected nodes')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Performing exclude...').start();
+    const code = `(async () => {
+      const sel = figma.currentPage.selection;
+      if (sel.length < 2) return { error: 'Select at least 2 nodes' };
+      const parent = sel[0].parent;
+      const result = figma.exclude(sel, parent);
+      figma.currentPage.selection = [result];
+      return { id: result.id, name: result.name };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Exclude created: ${result.name} (${result.id})`);
+      }
+    } catch (e) {
+      spinner.fail('Exclude failed: ' + e.message);
+    }
+  });
+
 program.parse();
