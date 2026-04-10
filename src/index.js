@@ -8578,4 +8578,55 @@ style
     }
   });
 
+// ============ UNDO ============
+
+const undo = program
+  .command('undo')
+  .description('Undo/redo and version history');
+
+undo
+  .action(async () => {
+    await checkConnection();
+    try {
+      await fastEval(`(() => { figma.triggerUndo(); return 'ok'; })()`);
+      console.log(chalk.green('✓ Undo triggered'));
+    } catch (e) {
+      console.log(chalk.red('✗ Undo failed: ' + e.message));
+    }
+  });
+
+undo
+  .command('commit')
+  .description('Commit current state to undo history (checkpoint)')
+  .action(async () => {
+    await checkConnection();
+    try {
+      await fastEval(`(() => { figma.commitUndo(); return 'ok'; })()`);
+      console.log(chalk.green('✓ Undo checkpoint committed'));
+    } catch (e) {
+      console.log(chalk.red('✗ Commit failed: ' + e.message));
+    }
+  });
+
+undo
+  .command('save <title>')
+  .description('Save a version to file history')
+  .option('-d, --description <text>', 'Version description')
+  .action(async (title, options) => {
+    await checkConnection();
+    const spinner = ora('Saving version...').start();
+    const desc = options.description || '';
+    const code = `(async () => {
+      const result = await figma.saveVersionHistoryAsync(${JSON.stringify(title)}, ${JSON.stringify(desc)});
+      return { id: result.id };
+    })()`;
+    try {
+      const result = await fastEval(code);
+      spinner.succeed(`Version saved: "${title}"`);
+      console.log(chalk.gray(`  Version ID: ${result.id}`));
+    } catch (e) {
+      spinner.fail('Save version failed: ' + e.message);
+    }
+  });
+
 program.parse();
