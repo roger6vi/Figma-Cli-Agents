@@ -948,7 +948,7 @@ node src/index.js a11y audit "nodeId"
 ## Key Rules
 
 1. **Always use `render` for frames** - has smart positioning
-2. **Never use `eval` to create** - no positioning, overlaps at (0,0)
+2. **Use `eval` only for complex/data-driven components** - where you need explicit Figma API control (positioning, dynamic properties, iteration). Never use `eval` where `render` would work, because `eval` has no smart positioning and overlaps at (0,0).
 3. **Never use `npx figma-use render`** - no smart positioning
 4. **For multiple frames:** Use `render-batch`
 5. **Convert to components:** `node to-component` after creation

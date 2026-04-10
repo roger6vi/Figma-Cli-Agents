@@ -294,9 +294,9 @@ export class FigmaClient {
 
     // Parse each JSX to get props and children
     const parsed = jsxArray.map(jsx => {
-      const openMatch = jsx.match(/<Frame\s+([^>]*)>/);
+      const openMatch = jsx.match(/<Frame(?:\s+([^>]*?))?>/);
       if (!openMatch) throw new Error('Invalid JSX: must start with <Frame>');
-      const propsStr = openMatch[1];
+      const propsStr = openMatch[1] || '';
       const startIdx = openMatch.index + openMatch[0].length;
       const children = this.extractContent(jsx.slice(startIdx), 'Frame');
       const props = this.parseProps(propsStr);
@@ -477,6 +477,103 @@ export class FigmaClient {
           ${fGrow && parentFlex === 'row' ? `el${idx}.layoutSizingHorizontal = 'FILL';` : ''}
           ${fGrow && parentFlex === 'col' ? `el${idx}.layoutSizingVertical = 'FILL';` : ''}
           ${nestedChildren}`;
+          } else if (item._type === 'rect') {
+            // Rectangle — parity with single renderer
+            const rWidth = item.w || item.width || 100;
+            const rHeight = item.h || item.height || 100;
+            const rBg = item.bg || item.fill || '#e4e4e7';
+            const rRounded = item.rounded || item.radius || 0;
+            const rName = item.name || 'Rectangle';
+            const rectFillCode = this.generateFillCode(rBg, `el${idx}`);
+            return `
+          const el${idx} = figma.createRectangle();
+          el${idx}.name = ${JSON.stringify(rName)};
+          el${idx}.resize(${rWidth}, ${rHeight});
+          el${idx}.cornerRadius = ${rRounded};
+          ${rectFillCode.code}
+          ${parentVar}.appendChild(el${idx});`;
+          } else if (item._type === 'image') {
+            // Image placeholder — parity with single renderer
+            const iWidth = item.w || item.width || 200;
+            const iHeight = item.h || item.height || 150;
+            const iBg = item.bg || '#f4f4f5';
+            const iRounded = item.rounded || item.radius || 8;
+            const iName = item.name || 'Image';
+            const imgFillCode = this.generateFillCode(iBg, `el${idx}`);
+            return `
+          const el${idx} = figma.createRectangle();
+          el${idx}.name = ${JSON.stringify(iName)};
+          el${idx}.resize(${iWidth}, ${iHeight});
+          el${idx}.cornerRadius = ${iRounded};
+          ${imgFillCode.code}
+          ${parentVar}.appendChild(el${idx});`;
+          } else if (item._type === 'icon') {
+            // Icon placeholder — parity with single renderer (no async fetch in batch; use rectangle fallback)
+            const icSize = item.size || item.s || 24;
+            const icBg = item.color || item.c || '#71717a';
+            const icName = item.name || 'Icon';
+            const iconFillCode = this.generateFillCode(icBg, `el${idx}`);
+            return `
+          const el${idx} = figma.createRectangle();
+          el${idx}.name = ${JSON.stringify(icName)};
+          el${idx}.resize(${icSize}, ${icSize});
+          el${idx}.cornerRadius = ${Math.round(Number(icSize) / 4)};
+          ${iconFillCode.code}
+          ${parentVar}.appendChild(el${idx});`;
+          } else if (item._type === 'instance') {
+            // Component instance — parity with single renderer
+            const compId = item.component || item.id;
+            const compName = item.name;
+            if (compId) {
+              return `
+          const comp${idx} = figma.getNodeById(${JSON.stringify(compId)});
+          if (comp${idx} && comp${idx}.type === 'COMPONENT') {
+            const el${idx} = comp${idx}.createInstance();
+            ${parentVar}.appendChild(el${idx});
+          }`;
+            } else if (compName) {
+              return `
+          const comp${idx} = figma.currentPage.findOne(n => n.type === 'COMPONENT' && n.name === ${JSON.stringify(compName)});
+          if (comp${idx}) {
+            const el${idx} = comp${idx}.createInstance();
+            ${parentVar}.appendChild(el${idx});
+          }`;
+            }
+          } else if (item._type === 'slot') {
+            // Slot — parity with single renderer
+            const slotName = item.name || 'Slot';
+            const slotFlex = item.flex || 'col';
+            const slotGap = item.gap || 0;
+            const slotP = item.p !== undefined ? item.p : (item.padding !== undefined ? item.padding : null);
+            const slotPx = item.px !== undefined ? item.px : (slotP !== null ? slotP : 0);
+            const slotPy = item.py !== undefined ? item.py : (slotP !== null ? slotP : 0);
+            const slotBg = item.bg || item.fill || null;
+            const slotWidth = item.w || item.width;
+            const slotHeight = item.h || item.height;
+            const fillWidth = item.w === 'fill';
+            const fillHeight = item.h === 'fill';
+            const nestedSlotChildren = item._children ? generateChildCode(item._children, `slot${idx}`, slotFlex) : '';
+            const slotFillCode = slotBg ? this.generateFillCode(slotBg, `slot${idx}`) : { code: '' };
+            return `
+          let slot${idx} = null;
+          if (${parentVar}.type === 'COMPONENT' || ${parentVar}.type === 'COMPONENT_SET') {
+            slot${idx} = ${parentVar}.createSlot(${JSON.stringify(slotName)});
+          } else {
+            slot${idx} = figma.createFrame();
+            slot${idx}.name = ${JSON.stringify(slotName)};
+            ${parentVar}.appendChild(slot${idx});
+          }
+          slot${idx}.layoutMode = '${slotFlex === 'row' ? 'HORIZONTAL' : 'VERTICAL'}';
+          slot${idx}.itemSpacing = ${slotGap};
+          slot${idx}.paddingTop = ${slotPy};
+          slot${idx}.paddingBottom = ${slotPy};
+          slot${idx}.paddingLeft = ${slotPx};
+          slot${idx}.paddingRight = ${slotPx};
+          ${slotWidth && !fillWidth ? `slot${idx}.resize(${slotWidth}, ${slotHeight || 100});` : ''}
+          ${fillWidth ? `slot${idx}.layoutSizingHorizontal = 'FILL';` : ''}
+          ${fillHeight ? `slot${idx}.layoutSizingVertical = 'FILL';` : ''}
+          ${slotFillCode.code}
+          ${nestedSlotChildren}`;
           }
           return '';
         }).join('\n');
@@ -538,13 +635,13 @@ export class FigmaClient {
    * Parse JSX-like syntax to Figma Plugin API code
    */
   async parseJSX(jsx) {
-    // Find opening Frame tag
-    const openMatch = jsx.match(/<Frame\s+([^>]*)>/);
+    // Find opening Frame tag (attributes are optional)
+    const openMatch = jsx.match(/<Frame(?:\s+([^>]*?))?>/);
     if (!openMatch) {
       throw new Error('Invalid JSX: must start with <Frame>');
     }
 
-    const propsStr = openMatch[1];
+    const propsStr = openMatch[1] || '';
     const startIdx = openMatch.index + openMatch[0].length;
 
     // Find matching closing tag by counting open/close tags
@@ -718,6 +815,8 @@ export class FigmaClient {
     // Slots can have children (default content)
     const slotOpenRegex = /<Slot(?:\s+([^>]*?))?>/g;
     while ((match = slotOpenRegex.exec(childrenStr)) !== null) {
+      // Skip self-closing slots (regex matches '>' inside '/>', same guard as Frame parser)
+      if (match[0].endsWith('/>')) continue;
       const idx = match.index;
       const insideFrame = frameRanges.some(r => idx >= r.start && idx < r.end);
       if (!insideFrame) {
