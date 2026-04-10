@@ -8951,4 +8951,157 @@ return JSON.stringify({ name: imported.name, id: imported.id });
     }
   });
 
+// ============ ANNOTATIONS ============
+
+const annotate = program
+  .command('annotate')
+  .description('Manage annotations and annotation categories');
+
+annotate
+  .command('list')
+  .description('List all annotation categories in the file')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Fetching annotation categories...').start();
+    try {
+      const code = `(async () => {
+        const categories = await figma.annotations.getAnnotationCategoriesAsync();
+        return JSON.stringify(categories.map(c => ({
+          id: c.id,
+          label: c.label,
+          color: c.color
+        })));
+      })()`;
+      const raw = await fastEval(code);
+      const categories = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.stop();
+      if (!categories.length) {
+        console.log(chalk.yellow('No annotation categories found'));
+        return;
+      }
+      console.log(chalk.cyan(`\nFound ${categories.length} annotation categor${categories.length === 1 ? 'y' : 'ies'}:\n`));
+      categories.forEach(c => {
+        console.log(`  ${chalk.white(c.label)} ${chalk.gray(`(${c.id})`)}`);
+        console.log(chalk.gray(`    Color: ${c.color}`));
+      });
+    } catch (err) {
+      spinner.fail('Failed to list categories: ' + err.message);
+    }
+  });
+
+annotate
+  .command('add-category <label>')
+  .description('Add a new annotation category')
+  .option('--color <color>', 'Category color: blue, green, yellow, red, orange, pink, violet, teal', 'blue')
+  .action(async (label, options) => {
+    await checkConnection();
+    const validColors = ['blue', 'green', 'yellow', 'red', 'orange', 'pink', 'violet', 'teal'];
+    const color = options.color.toLowerCase();
+    if (!validColors.includes(color)) {
+      console.log(chalk.red(`Invalid color: ${options.color}`));
+      console.log(chalk.gray(`  Valid colors: ${validColors.join(', ')}`));
+      process.exit(1);
+    }
+    const spinner = ora(`Adding category "${label}"...`).start();
+    try {
+      const code = `(async () => {
+        const cat = await figma.annotations.addAnnotationCategoryAsync({
+          label: ${JSON.stringify(label)},
+          color: ${JSON.stringify(color)}
+        });
+        return JSON.stringify({ id: cat.id, label: cat.label, color: cat.color });
+      })()`;
+      const raw = await fastEval(code);
+      const cat = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.succeed(`Created category ${chalk.bold(cat.label)} ${chalk.gray(`(${cat.id})`)}`);
+    } catch (err) {
+      spinner.fail('Failed to add category: ' + err.message);
+    }
+  });
+
+annotate
+  .command('set <text>')
+  .description('Add annotation to current selection')
+  .option('-c, --category <id>', 'Annotation category ID')
+  .action(async (text, options) => {
+    await checkConnection();
+    const spinner = ora('Adding annotation...').start();
+    try {
+      const categoryId = options.category || null;
+      const code = `(async () => {
+        const sel = figma.currentPage.selection;
+        if (!sel.length) return JSON.stringify({ error: 'No node selected' });
+        const node = sel[0];
+        if (!('annotations' in node)) return JSON.stringify({ error: 'Node does not support annotations' });
+        const existing = node.annotations ? [...node.annotations] : [];
+        const newAnnotation = { label: ${JSON.stringify(text)} };
+        ${categoryId ? `newAnnotation.categoryId = ${JSON.stringify(categoryId)};` : ''}
+        existing.push(newAnnotation);
+        node.annotations = existing;
+        return JSON.stringify({ name: node.name, id: node.id, total: existing.length });
+      })()`;
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (result.error) {
+        spinner.fail(result.error);
+      } else {
+        spinner.succeed(`Added annotation to ${chalk.bold(result.name)} ${chalk.gray(`(${result.id})`)} — ${result.total} total`);
+      }
+    } catch (err) {
+      spinner.fail('Failed to add annotation: ' + err.message);
+    }
+  });
+
+annotate
+  .command('get')
+  .description('Read annotations from current selection')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Reading annotations...').start();
+    try {
+      const code = `(async () => {
+        const sel = figma.currentPage.selection;
+        if (!sel.length) return JSON.stringify({ error: 'No node selected' });
+        const results = [];
+        const categories = await figma.annotations.getAnnotationCategoriesAsync();
+        const catMap = {};
+        categories.forEach(c => { catMap[c.id] = c.label; });
+        for (const node of sel) {
+          if (!('annotations' in node) || !node.annotations || !node.annotations.length) continue;
+          results.push({
+            name: node.name,
+            id: node.id,
+            annotations: node.annotations.map(a => ({
+              label: a.label || a.labelMarkdown || '(pinned properties)',
+              category: a.categoryId ? (catMap[a.categoryId] || a.categoryId) : null,
+              properties: a.properties ? a.properties.map(p => p.type) : []
+            }))
+          });
+        }
+        return JSON.stringify(results);
+      })()`;
+      const raw = await fastEval(code);
+      const results = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.stop();
+      if (results.error) {
+        console.log(chalk.red('✗ ' + results.error));
+        return;
+      }
+      if (!results.length) {
+        console.log(chalk.yellow('No annotations found on selected nodes'));
+        return;
+      }
+      results.forEach(node => {
+        console.log(`\n  ${chalk.white(node.name)} ${chalk.gray(`(${node.id})`)} — ${node.annotations.length} annotation${node.annotations.length === 1 ? '' : 's'}`);
+        node.annotations.forEach((a, i) => {
+          const catLabel = a.category ? chalk.blue(` [${a.category}]`) : '';
+          const propsLabel = a.properties.length ? chalk.gray(` (pinned: ${a.properties.join(', ')})`) : '';
+          console.log(`    ${i + 1}. ${a.label}${catLabel}${propsLabel}`);
+        });
+      });
+    } catch (err) {
+      spinner.fail('Failed to read annotations: ' + err.message);
+    }
+  });
+
 program.parse();
