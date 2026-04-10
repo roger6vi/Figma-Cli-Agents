@@ -8822,4 +8822,133 @@ section
     }
   });
 
+// ============ TEAM LIBRARY ============
+
+const library = program
+  .command('library')
+  .description('Team library operations');
+
+library
+  .command('list')
+  .description('List available library variable collections')
+  .action(async () => {
+    checkConnection();
+    const spinner = ora('Fetching library collections...').start();
+    try {
+      const code = `(async () => {
+const collections = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+if (collections.length === 0) return JSON.stringify({ collections: [] });
+return JSON.stringify({
+  collections: collections.map(c => ({
+    name: c.name,
+    key: c.key,
+    libraryName: c.libraryName
+  }))
+});
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.collections.length === 0) {
+        spinner.succeed('No library variable collections found');
+        return;
+      }
+      spinner.succeed(`Found ${data.collections.length} library collection(s)`);
+      for (const c of data.collections) {
+        console.log(`  ${chalk.bold(c.name)}  ${chalk.dim('key=')}${c.key}  ${chalk.dim('library=')}${c.libraryName}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+library
+  .command('variables <collectionKey>')
+  .description('List variables in a library collection')
+  .action(async (collectionKey) => {
+    checkConnection();
+    const spinner = ora('Fetching library variables...').start();
+    try {
+      const code = `(async () => {
+const vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync('${collectionKey}');
+if (vars.length === 0) return JSON.stringify({ variables: [] });
+return JSON.stringify({
+  variables: vars.map(v => ({
+    name: v.name,
+    resolvedType: v.resolvedType,
+    key: v.key
+  }))
+});
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.variables.length === 0) {
+        spinner.succeed('No variables in this collection');
+        return;
+      }
+      spinner.succeed(`Found ${data.variables.length} variable(s)`);
+      for (const v of data.variables) {
+        console.log(`  ${chalk.bold(v.name)}  ${chalk.cyan(v.resolvedType)}  ${chalk.dim('key=')}${v.key}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+library
+  .command('import-var <variableKey>')
+  .description('Import a variable from team library into local file')
+  .action(async (variableKey) => {
+    checkConnection();
+    const spinner = ora('Importing variable...').start();
+    try {
+      const code = `(async () => {
+const imported = await figma.variables.importVariableByKeyAsync('${variableKey}');
+return JSON.stringify({ name: imported.name, id: imported.id });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      spinner.succeed(`Imported variable: ${chalk.bold(data.name)} (${data.id})`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+library
+  .command('import-component <componentKey>')
+  .description('Import a component from team library')
+  .action(async (componentKey) => {
+    checkConnection();
+    const spinner = ora('Importing component...').start();
+    try {
+      const code = `(async () => {
+const imported = await figma.importComponentByKeyAsync('${componentKey}');
+return JSON.stringify({ name: imported.name, id: imported.id });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      spinner.succeed(`Imported component: ${chalk.bold(data.name)} (${data.id})`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+library
+  .command('import-style <styleKey>')
+  .description('Import a style from team library')
+  .action(async (styleKey) => {
+    checkConnection();
+    const spinner = ora('Importing style...').start();
+    try {
+      const code = `(async () => {
+const imported = await figma.importStyleByKeyAsync('${styleKey}');
+return JSON.stringify({ name: imported.name, id: imported.id });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      spinner.succeed(`Imported style: ${chalk.bold(data.name)} (${data.id})`);
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
 program.parse();
