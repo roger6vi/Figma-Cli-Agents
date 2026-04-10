@@ -30,6 +30,9 @@ All notable changes to Figma-Cli-Agents are documented here.
 
 - bash 3.2 compatibility in bin/fig-start (`${1,,}` replaced with `printf|tr`)
 - Figma Beta detection now works correctly across all platform functions
+- npm package bins for `figma-cli` and `figma-ds-cli` now point directly to `src/index.js`, removing the stale `bin/figma-cli` wrapper dependency.
+- `package-lock.json` root metadata now matches `package.json` v2.2.0 and the current bin map.
+- Package tests now validate declared bin targets, shebangs, POSIX executable bits, pack inclusion, and lockfile sync.
 
 ## [2.1.0] - 2026-04-10
 
@@ -62,7 +65,7 @@ All notable changes to Figma-Cli-Agents are documented here.
 - Initial fork from silships/figma-cli with agent-friendly variant
 - `AGENTS.md` as the primary command reference (replaces inline CLAUDE.md)
 - `GEMINI.md` adapter file for Gemini agent support
-- `bin/figma-cli` wrapper script
+- `figma-cli` and `figma-ds-cli` npm commands
 - `fig-start --safe` for Safe Mode exclusive operation
 
 ### Changed

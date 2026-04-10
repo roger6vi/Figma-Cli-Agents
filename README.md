@@ -53,7 +53,7 @@ Compared with the original [`roger6vi/figma-cli`](https://github.com/roger6vi/fi
 
 - **Multi-agent launch flow** — `fig-start` can hand off the same repo context to Claude, Codex, Gemini, Crush, or OpenCode.
 - **Shared agent instructions** — `AGENTS.md` plus adapter files like `GEMINI.md`, `CRUSH.md`, and `OPENCODE.md` keep the operational context in-repo instead of relying on a single Claude-only file.
-- **Better packaged CLI workflow** — the package ships the Safe Mode plugin assets, the `figma-cli` wrapper, and repo-aware shell aliases.
+- **Better packaged CLI workflow** — the package ships the Safe Mode plugin assets, direct Node CLI entry points (`figma-cli` / `figma-ds-cli`), and repo-aware shell aliases.
 - **Richer read/inspect capabilities** — structured `get`, exact/coordinate `find`, `node tree --json`, and `node inspect` improve how the CLI reads Figma state through the daemon/plugin bridge.
 - **Signed release history** — signed tags plus [`CHANGELOG.md`](./CHANGELOG.md) make it easier to see what changed between the initial snapshot and the current fork release.
 
@@ -437,8 +437,8 @@ The CLI runs a local daemon for faster command execution. Security features:
 - **Idle timeout**: Auto-shutdown after 10 minutes of inactivity (configurable)
 - **Fixed local ports**: CDP uses `9222`; Safe Mode daemon uses `3456`
 
-The daemon session token is stored in the OS temp directory with owner-only permissions (0600).
-On macOS/Linux this is typically `/tmp/.figma-daemon-token`.
+The daemon session token is stored at `~/.figma-ds-cli/.daemon-token` with owner-only permissions (0600).
+The daemon and CLI both resolve that path from the user's home directory.
 
 ---
 

@@ -10,7 +10,6 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { createInterface } from 'readline';
 import { homedir, tmpdir } from 'os';
-import { createServer } from 'http';
 import { FigJamClient } from './figjam-client.js';
 import { FigmaClient } from './figma-client.js';
 import { isPatched, patchFigma, unpatchFigma, getFigmaCommand, getCdpPort, getFigmaBinaryPath } from './figma-patch.js';
@@ -764,7 +763,7 @@ if (children.length > 0) {
 
 program
   .name('figma-ds-cli')
-  .description('CLI for managing Figma design systems')
+  .description('CLI for controlling Figma Desktop from Claude Code, Codex, Gemini, Crush, and OpenCode. No API key required.')
   .version(pkg.version);
 
 // Default action when no command is given

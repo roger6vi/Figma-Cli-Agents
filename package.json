@@ -1,13 +1,13 @@
 {
   "name": "figma-ds-cli",
   "version": "2.2.0",
-  "description": "CLI for managing Figma design systems. Create variables, components, and more. No API key required.",
+  "description": "CLI for controlling Figma Desktop from Claude Code, Codex, Gemini, Crush, and OpenCode. No API key required.",
   "author": "Sil Bormüller",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "figma-cli": "bin/figma-cli",
-    "figma-ds-cli": "bin/figma-cli",
+    "figma-cli": "src/index.js",
+    "figma-ds-cli": "src/index.js",
     "fig-start": "bin/fig-start"
   },
   "files": [
@@ -31,7 +31,7 @@
     "type": "git",
     "url": "git+https://github.com/roger6vi/Figma-Cli-Agents.git"
   },
-  "homepage": "https://intodesignsystems.com",
+  "homepage": "https://github.com/roger6vi/Figma-Cli-Agents#readme",
   "bugs": {
     "url": "https://github.com/roger6vi/Figma-Cli-Agents/issues"
   },

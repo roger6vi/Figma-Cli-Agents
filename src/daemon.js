@@ -18,7 +18,7 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { readFileSync, statSync, writeFileSync, unlinkSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { homedir, tmpdir } from 'os';
+import { homedir } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 // Hot-reload FigmaClient: copy to temp file and import (Node.js ES modules don't support cache busting)
