@@ -9181,4 +9181,92 @@ viewport
     }
   });
 
+// ============ PAGES ============
+
+const page = program
+  .command('page')
+  .description('Page management');
+
+page
+  .command('list')
+  .description('List all pages in the document')
+  .action(async () => {
+    await checkConnection();
+    const spinner = ora('Listing pages...').start();
+    try {
+      const code = `(async () => {
+        const currentId = figma.currentPage.id;
+        const pages = figma.root.children.map(p => ({
+          name: p.name,
+          id: p.id,
+          isCurrent: p.id === currentId,
+          childCount: p.children.length
+        }));
+        return JSON.stringify(pages);
+      })()`;
+      const raw = await fastEval(code);
+      const pages = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.stop();
+      console.log(chalk.cyan(`\n${pages.length} page${pages.length === 1 ? '' : 's'}:\n`));
+      pages.forEach((p, i) => {
+        const marker = p.isCurrent ? chalk.green(' ◉') : chalk.gray(' ○');
+        const current = p.isCurrent ? chalk.green(' (current)') : '';
+        console.log(`  ${marker} ${chalk.white(p.name)}${current} ${chalk.gray(`(${p.id}) — ${p.childCount} children`)}`);
+      });
+    } catch (err) {
+      spinner.fail('Failed to list pages: ' + err.message);
+    }
+  });
+
+page
+  .command('switch <name>')
+  .description('Switch to a page by name')
+  .action(async (name) => {
+    await checkConnection();
+    const spinner = ora(`Switching to page "${name}"...`).start();
+    try {
+      const code = `(async () => {
+        const target = figma.root.children.find(p => p.name === ${JSON.stringify(name)});
+        if (!target) {
+          const available = figma.root.children.map(p => p.name);
+          return JSON.stringify({ error: 'Page not found: ${name.replace(/'/g, "\\'")}', available });
+        }
+        await figma.setCurrentPageAsync(target);
+        return JSON.stringify({ name: target.name, id: target.id });
+      })()`;
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (result.error) {
+        spinner.fail(result.error);
+        if (result.available) {
+          console.log(chalk.gray(`  Available pages: ${result.available.join(', ')}`));
+        }
+      } else {
+        spinner.succeed(`Switched to page ${chalk.bold(result.name)} ${chalk.gray(`(${result.id})`)}`);
+      }
+    } catch (err) {
+      spinner.fail('Failed to switch page: ' + err.message);
+    }
+  });
+
+page
+  .command('create <name>')
+  .description('Create a new page')
+  .action(async (name) => {
+    await checkConnection();
+    const spinner = ora(`Creating page "${name}"...`).start();
+    try {
+      const code = `(async () => {
+        const newPage = figma.createPage();
+        newPage.name = ${JSON.stringify(name)};
+        return JSON.stringify({ name: newPage.name, id: newPage.id });
+      })()`;
+      const raw = await fastEval(code);
+      const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      spinner.succeed(`Created page ${chalk.bold(result.name)} ${chalk.gray(`(${result.id})`)}`);
+    } catch (err) {
+      spinner.fail('Failed to create page: ' + err.message);
+    }
+  });
+
 program.parse();
