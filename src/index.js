@@ -1504,6 +1504,141 @@ return 'Deleted ' + deleted + ' variables and ' + cols.length + ' collections';
     }
   });
 
+// ============ VARIABLE ALIASES & ADVANCED OPS ============
+
+variables
+  .command('alias <variableId> <targetVariableId>')
+  .description('Make a variable alias another variable')
+  .action(async (variableId, targetVariableId) => {
+    checkConnection();
+    const spinner = ora('Creating variable alias...').start();
+    try {
+      const code = `(async () => {
+const source = await figma.variables.getVariableByIdAsync('${variableId}');
+if (!source) return JSON.stringify({ error: 'Source variable not found: ${variableId}' });
+const target = await figma.variables.getVariableByIdAsync('${targetVariableId}');
+if (!target) return JSON.stringify({ error: 'Target variable not found: ${targetVariableId}' });
+const col = await figma.variables.getVariableCollectionByIdAsync(source.variableCollectionId);
+if (!col) return JSON.stringify({ error: 'Collection not found for source variable' });
+const modeId = col.modes[0].modeId;
+const alias = figma.variables.createVariableAlias(target);
+source.setValueForMode(modeId, alias);
+return JSON.stringify({ source: source.name, target: target.name });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.error) {
+        spinner.fail(data.error);
+      } else {
+        spinner.succeed(`${chalk.bold(data.source)} now aliases ${chalk.bold(data.target)}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+variables
+  .command('bind-prop <nodeId> <propName> <variableId>')
+  .description('Bind a component instance property to a variable')
+  .action(async (nodeId, propName, variableId) => {
+    checkConnection();
+    const spinner = ora('Binding property to variable...').start();
+    try {
+      const code = `(async () => {
+const node = await figma.getNodeByIdAsync('${nodeId}');
+if (!node) return JSON.stringify({ error: 'Node not found: ${nodeId}' });
+const variable = await figma.variables.getVariableByIdAsync('${variableId}');
+if (!variable) return JSON.stringify({ error: 'Variable not found: ${variableId}' });
+const alias = figma.variables.createVariableAlias(variable);
+node.setProperties({ ['${propName}']: alias });
+return JSON.stringify({ node: node.name, prop: '${propName}', variable: variable.name });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.error) {
+        spinner.fail(data.error);
+      } else {
+        spinner.succeed(`Bound ${chalk.cyan(data.prop)} on ${chalk.bold(data.node)} to variable ${chalk.bold(data.variable)}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+variables
+  .command('extend <collectionKey> <name>')
+  .description('Extend a library collection locally')
+  .action(async (collectionKey, name) => {
+    checkConnection();
+    const spinner = ora('Extending library collection...').start();
+    try {
+      const code = `(async () => {
+const col = await figma.variables.extendLibraryCollectionByKeyAsync('${collectionKey}', '${name}');
+return JSON.stringify({ name: col.name, id: col.id, modes: col.modes.map(m => ({ name: m.name, modeId: m.modeId })) });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      spinner.succeed(`Extended collection: ${chalk.bold(data.name)} (${data.id})`);
+      for (const m of data.modes) {
+        console.log(`  Mode: ${chalk.cyan(m.name)}  ${chalk.dim(m.modeId)}`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+variables
+  .command('modes <collectionId>')
+  .description('List modes of a variable collection')
+  .action(async (collectionId) => {
+    checkConnection();
+    const spinner = ora('Fetching modes...').start();
+    try {
+      const code = `(async () => {
+const col = await figma.variables.getVariableCollectionByIdAsync('${collectionId}');
+if (!col) return JSON.stringify({ error: 'Collection not found: ${collectionId}' });
+return JSON.stringify({ name: col.name, modes: col.modes.map(m => ({ name: m.name, modeId: m.modeId })) });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.error) {
+        spinner.fail(data.error);
+      } else {
+        spinner.succeed(`Collection: ${chalk.bold(data.name)} — ${data.modes.length} mode(s)`);
+        for (const m of data.modes) {
+          console.log(`  ${chalk.bold(m.name)}  ${chalk.dim(m.modeId)}`);
+        }
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
+variables
+  .command('add-mode <collectionId> <modeName>')
+  .description('Add a new mode to a variable collection')
+  .action(async (collectionId, modeName) => {
+    checkConnection();
+    const spinner = ora(`Adding mode "${modeName}"...`).start();
+    try {
+      const code = `(async () => {
+const col = await figma.variables.getVariableCollectionByIdAsync('${collectionId}');
+if (!col) return JSON.stringify({ error: 'Collection not found: ${collectionId}' });
+const newModeId = col.addMode('${modeName}');
+return JSON.stringify({ collection: col.name, modeName: '${modeName}', modeId: newModeId });
+})()`;
+      const raw = await fastEval(code);
+      const data = JSON.parse(raw);
+      if (data.error) {
+        spinner.fail(data.error);
+      } else {
+        spinner.succeed(`Added mode ${chalk.bold(data.modeName)} to ${chalk.bold(data.collection)} (${data.modeId})`);
+      }
+    } catch (err) {
+      spinner.fail(err.message);
+    }
+  });
+
 // ============ BATCH OPERATIONS ============
 
 program
