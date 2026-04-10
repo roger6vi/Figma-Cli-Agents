@@ -587,7 +587,7 @@ node src/index.js viewport center "nodeId"     # Center on a node
 
 ## Project Isolation
 
-Each Figma file gets its own folder at `~/.figma-cli/projects/<slug>/`.
+Each Figma file gets its own folder at `~/.figma-ds-cli/projects/<slug>/`.
 
 ```bash
 node src/index.js project list                 # List all projects
@@ -598,7 +598,7 @@ node src/index.js project resolve --title "My File" --file-key "ABC123"
 Project directory structure:
 
 ```text
-~/.figma-cli/projects/my-design-system/
+~/.figma-ds-cli/projects/my-design-system/
   project.json     # Manifest (title, fileKey, url, createdAt)
   scripts/         # eval -f scripts (auto-resolved)
   exports/         # Screenshots and exports (auto-redirected)
@@ -616,8 +616,8 @@ node src/index.js skills show naming-conventions  # Read a skill
 
 Directories:
 
-- Global: `~/.figma-cli/skills/`
-- Project: `~/.figma-cli/projects/<slug>/skills/`
+- Global: `~/.figma-ds-cli/skills/`
+- Project: `~/.figma-ds-cli/projects/<slug>/skills/`
 
 ## AI Verification
 

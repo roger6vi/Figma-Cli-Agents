@@ -180,7 +180,7 @@ This will:
 
 **Done.** Talk to Claude, Codex, Gemini, Crush, or OpenCode about your Figma file.
 
-> **Note:** `fig-start` works from any directory. The setup script saves the repo location to `~/.figma-cli/config.json`.
+> **Note:** `fig-start` works from any directory. The setup script saves the repo location to `~/.figma-ds-cli/config.json`.
 
 ### fig-start Options
 

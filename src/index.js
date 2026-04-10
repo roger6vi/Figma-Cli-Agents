@@ -329,6 +329,37 @@ function getProjectDir() {
   return process.env.FIGMA_PROJECT_DIR || null;
 }
 
+/**
+ * Resolve a script file path relative to the active project's scripts/ directory.
+ * If FIGMA_PROJECT_DIR is set and the file exists under <project>/scripts/<path>,
+ * returns that path. Otherwise returns the original path as-is (cwd-relative behaviour).
+ */
+function resolveProjectScriptPath(filePath) {
+  const projectDir = getProjectDir();
+  if (projectDir) {
+    const projectScriptPath = join(projectDir, 'scripts', filePath);
+    if (existsSync(projectScriptPath)) {
+      return projectScriptPath;
+    }
+  }
+  return filePath;
+}
+
+/**
+ * Resolve an output/export file path relative to the active project's exports/ directory.
+ * If FIGMA_PROJECT_DIR is set, auto-creates <project>/exports/ and returns the path inside it.
+ * Otherwise returns the original path (cwd-relative behaviour).
+ */
+function resolveProjectExportPath(filePath) {
+  const projectDir = getProjectDir();
+  if (projectDir) {
+    const exportsDir = join(projectDir, 'exports');
+    mkdirSync(exportsDir, { recursive: true });
+    return join(exportsDir, filePath);
+  }
+  return filePath;
+}
+
 function createOrGetProjectDir(title, fileKey, url) {
   const slug = slugify(title);
 
@@ -497,8 +528,8 @@ function figmaEvalSync(code) {
   const resultTemp = createSecureTempFile('figma-result', '.json');
 
   try {
-    // Use file:// URL for ESM import (cross-platform)
-    const clientUrl = pathToFileURL(join(process.cwd(), 'src/figma-client.js')).href;
+    // Use file:// URL for ESM import — derive from __dirname so global execution works
+    const clientUrl = pathToFileURL(join(__dirname, 'figma-client.js')).href;
 
     const script = `
     import { FigmaClient } from '${clientUrl}';
@@ -1179,7 +1210,21 @@ program
       }
 
       if (!pluginConnected) {
-        pluginSpinner.warn('Plugin not detected. Start the plugin in Figma to connect.');
+        pluginSpinner.fail('Plugin not detected. Start the FigCli plugin in Figma and try again.');
+        console.error(chalk.red('\n  ✗ Safe Mode failed: plugin did not connect within 30 seconds.\n'));
+        console.error(chalk.yellow('  → Open Figma Desktop, run the FigCli plugin, then re-run:') + chalk.white(' fig-start --safe\n'));
+        process.exit(1);
+      }
+
+      // Query plugin for active file info (for project isolation in fig-start)
+      try {
+        const activeTitle = await daemonExec('eval', { code: 'figma.root.name' }, 5000);
+        if (activeTitle) {
+          // Print machine-readable marker that fig-start can capture
+          console.log(`FIGMA_ACTIVE_FILE=${activeTitle}`);
+        }
+      } catch {
+        // Non-fatal: fig-start will use a default project dir
       }
       return;
     }
@@ -5512,9 +5557,10 @@ return {
       process.exit(1);
     }
     const buffer = Buffer.from(result.bytes);
-    const outputFile = options.output === 'screenshot.png' && format !== 'PNG'
+    const rawOutput = options.output === 'screenshot.png' && format !== 'PNG'
       ? `screenshot.${format.toLowerCase()}`
       : options.output;
+    const outputFile = resolveProjectExportPath(rawOutput);
     writeFileSync(outputFile, buffer);
     console.log(chalk.green('✓'), `Screenshot: ${result.name} (${result.width}x${result.height}) → ${outputFile}`);
   });
@@ -5548,9 +5594,10 @@ return {
       process.exit(1);
     }
     const buffer = Buffer.from(result.bytes);
-    const outputFile = options.output === 'node-export.png' && format !== 'PNG'
+    const rawOutput = options.output === 'node-export.png' && format !== 'PNG'
       ? `node-export.${format.toLowerCase()}`
       : options.output;
+    const outputFile = resolveProjectExportPath(rawOutput);
     writeFileSync(outputFile, buffer);
     console.log(chalk.green('✓'), `Exported ${result.name} (${result.width}x${result.height}) to ${outputFile}`);
   });
@@ -5702,11 +5749,12 @@ program
 
     // If --file option provided, read code from file
     if (options.file) {
-      if (!existsSync(options.file)) {
-        console.log(chalk.red('✗ File not found: ' + options.file));
+      const resolvedFile = resolveProjectScriptPath(options.file);
+      if (!existsSync(resolvedFile)) {
+        console.log(chalk.red('✗ File not found: ' + resolvedFile));
         return;
       }
-      jsCode = readFileSync(options.file, 'utf8');
+      jsCode = readFileSync(resolvedFile, 'utf8');
     }
 
     if (!jsCode) {
@@ -5757,11 +5805,12 @@ program
   .description('Run JavaScript file in Figma (alias for eval --file)')
   .action(async (file) => {
     checkConnection();
-    if (!existsSync(file)) {
-      console.log(chalk.red('✗ File not found: ' + file));
+    const resolvedFile = resolveProjectScriptPath(file);
+    if (!existsSync(resolvedFile)) {
+      console.log(chalk.red('✗ File not found: ' + resolvedFile));
       return;
     }
-    const code = readFileSync(file, 'utf8');
+    const code = readFileSync(resolvedFile, 'utf8');
     try {
       // Use async daemon path for better performance with long scripts
       if (isDaemonRunning()) {

@@ -1006,7 +1006,7 @@ node src/index.js daemon restart
 
 ## Project Isolation
 
-Each Figma file gets its own folder at `~/.figma-cli/projects/<slug>/` with scripts, exports, and skills separated.
+Each Figma file gets its own folder at `~/.figma-ds-cli/projects/<slug>/` with scripts, exports, and skills separated.
 
 `fig-start` creates the project directory automatically when you select a file.
 
@@ -1025,7 +1025,7 @@ node src/index.js project resolve --title "My File" --file-key "ABC123"
 ### Project structure
 
 ```text
-~/.figma-cli/projects/my-design-system/
+~/.figma-ds-cli/projects/my-design-system/
   project.json     # Manifest (title, fileKey, url, createdAt)
   scripts/         # eval -f scripts (auto-resolved)
   exports/         # Screenshots and exports (auto-redirected)
@@ -1056,7 +1056,7 @@ node src/index.js skills show naming-conventions
 
 ### Directories
 
-- Global: `~/.figma-cli/skills/`
-- Project: `~/.figma-cli/projects/<slug>/skills/`
+- Global: `~/.figma-ds-cli/skills/`
+- Project: `~/.figma-ds-cli/projects/<slug>/skills/`
 
 Project skills take priority over global skills with the same name.

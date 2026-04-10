@@ -9,7 +9,7 @@
 #   fig-start --setup  → set/change the figma-cli repo path
 #   fig-start --init   → initialize current directory for figma-cli (copies AGENTS.md, creates CLAUDE.md)
 
-CONFIG_DIR="$HOME/.figma-cli"
+CONFIG_DIR="$HOME/.figma-ds-cli"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 SOURCE="${BASH_SOURCE[0]}"
 while [ -h "$SOURCE" ]; do
@@ -494,17 +494,36 @@ fi
 # Step 2: Connect to Figma
 if [ "$SAFE_MODE" = true ]; then
     # ── Safe Mode: plugin-based connection ──
-    # Run connect --safe interactively so user sees plugin setup instructions
+    # Run connect --safe, streaming output to terminal while also capturing it
     echo -e "  ${BOLD}🔒 Safe Mode${NC} — plugin-based, no patching required"
     echo ""
-    node "$CLI" connect --safe
-    if [ $? -ne 0 ]; then
-        echo -e "  ${RED}Connection failed.${NC}"
+    _SAFE_TMP=$(mktemp)
+    node "$CLI" connect --safe 2>&1 | tee "$_SAFE_TMP"
+    CONNECT_SAFE_EXIT="${PIPESTATUS[0]}"
+    CONNECT_SAFE_OUT=$(cat "$_SAFE_TMP")
+    rm -f "$_SAFE_TMP"
+    if [ "$CONNECT_SAFE_EXIT" -ne 0 ]; then
+        echo -e "  ${RED}Safe Mode connection failed. Plugin did not connect.${NC}"
+        echo -e "  ${YELLOW}Tip:${NC} Open Figma, run the FigCli plugin, then try again."
         exit 1
     fi
     echo ""
 
-    # Skip file selector (Safe Mode only sees the active file via plugin)
+    # Step 3 (Safe Mode): Resolve project directory using active file title from plugin
+    SAFE_MODE_TITLE=$(echo "$CONNECT_SAFE_OUT" | grep '^FIGMA_ACTIVE_FILE=' | head -1 | sed 's/^FIGMA_ACTIVE_FILE=//')
+    if [ -n "$SAFE_MODE_TITLE" ]; then
+        resolve_cmd=(node "$CLI" project resolve --title "$SAFE_MODE_TITLE")
+        PROJECT_DIR=$("${resolve_cmd[@]}" 2>/dev/null)
+        if [ -n "$PROJECT_DIR" ]; then
+            export FIGMA_PROJECT_DIR="$PROJECT_DIR"
+            echo -e "  ${GREEN}✓ Project:${NC} ${DIM}$PROJECT_DIR${NC}"
+        fi
+    else
+        echo -e "  ${YELLOW}⚠ Could not determine active Figma file — project isolation inactive.${NC}"
+        echo -e "  ${DIM}(Open a Figma file and ensure the FigCli plugin is running.)${NC}"
+    fi
+    echo ""
+
     launch_agent
 else
     # ── Yolo Mode: CDP-based connection ──
