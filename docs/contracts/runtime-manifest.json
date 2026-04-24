@@ -1,0 +1,62 @@
+{
+  "runtime": {
+    "name": "figma-ds-cli",
+    "repository": "figma-cli-agents",
+    "versionSource": {
+      "strategy": "package.json",
+      "path": "./package.json",
+      "field": "version"
+    }
+  },
+  "modes": {
+    "yolo": {
+      "supported": true,
+      "description": "Direct CDP connection, may patch Figma locally"
+    },
+    "safe": {
+      "supported": true,
+      "description": "Plugin-based connection through the local daemon"
+    }
+  },
+  "capabilities": {
+    "connection": {
+      "daemonHealth": true,
+      "directCdpFallback": true,
+      "pluginBridge": true
+    },
+    "read": {
+      "structuredSnapshot": true,
+      "nodeSearch": true,
+      "nodeTreeJson": true,
+      "nodeInspect": true,
+      "canvasInfo": true,
+      "pageList": true
+    },
+    "write": {
+      "canvasMutation": true,
+      "componentConversion": true,
+      "variableOperations": true,
+      "styleOperations": true,
+      "libraryImport": true,
+      "annotations": true,
+      "rawEval": true,
+      "pluginManagement": true,
+      "bundledVoice": true
+    },
+    "verify": {
+      "screenshotSelection": true,
+      "screenshotNodeById": true,
+      "base64Stdout": true,
+      "pngSave": true,
+      "requiredAfterComponentCreation": true,
+      "requiredForAllWrites": false
+    }
+  },
+  "contracts": {
+    "connection": "./docs/contracts/connection-contract.md",
+    "read": "./docs/contracts/read-contract.md",
+    "write": "./docs/contracts/write-contract.md",
+    "verify": "./docs/contracts/verify-contract.md",
+    "forkDeltas": "./docs/contracts/fork-deltas.md"
+  }
+}

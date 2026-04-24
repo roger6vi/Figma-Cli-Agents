@@ -1,0 +1,12 @@
+{
+  "name": "voice",
+  "description": "Bundled voice command helpers for figma-ds-cli",
+  "commands": [
+    "voice"
+  ],
+  "requiredKeys": [
+    "apiKey"
+  ],
+  "platformNote": "Requires daemon connection to execute voice actions.",
+  "requirements": "Set FIGMA_PLUGIN_VOICE_APIKEY before running plugins setup voice"
+}

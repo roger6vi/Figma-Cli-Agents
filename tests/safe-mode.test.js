@@ -19,6 +19,7 @@ import { execSync } from 'child_process';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const srcIndex = readFileSync(resolve(repoRoot, 'src/index.js'), 'utf8');
 const figStart = readFileSync(resolve(repoRoot, 'bin/fig-start'), 'utf8');
+const pluginCode = readFileSync(resolve(repoRoot, 'plugin/code.js'), 'utf8');
 
 // ── connect --safe exit code ──
 
@@ -116,5 +117,28 @@ describe('connect --safe returns active Figma file info for project resolution',
     // Verify it's printed via console.log after plugin connected
     assert.match(srcIndex, /console\.log\(`FIGMA_ACTIVE_FILE=\$\{/,
       'connect --safe must console.log FIGMA_ACTIVE_FILE= when plugin connects');
+  });
+});
+
+describe('Safe Mode plugin eval hardening', () => {
+  it('does not depend on AsyncFunction in plugin execution path', () => {
+    assert.doesNotMatch(
+      pluginCode,
+      /AsyncFunction|new\s+Function\s*\(/,
+      'plugin/code.js must not use AsyncFunction or Function constructors in Safe Mode eval'
+    );
+  });
+
+  it('rejects malformed eval payloads with bounded error envelopes', () => {
+    assert.match(
+      pluginCode,
+      /invalid eval payload/i,
+      'plugin/code.js must reject malformed eval payloads with a deterministic error'
+    );
+    assert.match(
+      pluginCode,
+      /\.slice\(0,\s*\d+\)/,
+      'plugin/code.js must bound error messages before posting back to daemon'
+    );
   });
 });

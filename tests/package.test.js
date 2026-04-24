@@ -77,6 +77,13 @@ describe('npm package contents', () => {
     assert.ok(files.includes('plugin/ui.html'));
   });
 
+  it('includes bundled voice plugin assets for plugin runtime', () => {
+    const files = getPackedFiles();
+
+    assert.ok(files.includes('plugins/voice/manifest.json'));
+    assert.ok(files.includes('plugins/voice/index.js'));
+  });
+
   it('does not publish daemon hot-reload temp modules', () => {
     const files = getPackedFiles();
 

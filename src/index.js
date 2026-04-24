@@ -30,6 +30,7 @@ import {
   getFigmaVersion, isFigmaRunning, platformName
 } from './platform.js';
 import { buildNodeInspectionCode, formatNodeTree } from './node-inspect.js';
+import { loadPlugins } from './plugins.js';
 
 // Helper: structured node inspection via daemon/client
 async function inspectNodeSnapshot({ nodeId, depth = 2, sharedNamespace, fallbackToPage = true } = {}) {
@@ -1219,8 +1220,9 @@ program
       try {
         const activeTitle = await daemonExec('eval', { code: 'figma.root.name' }, 5000);
         if (activeTitle) {
+          const safeActiveTitle = String(activeTitle).replace(/[\r\n]+/g, ' ').trim();
           // Print machine-readable marker that fig-start can capture
-          console.log(`FIGMA_ACTIVE_FILE=${activeTitle}`);
+          console.log(`FIGMA_ACTIVE_FILE=${safeActiveTitle}`);
         }
       } catch {
         // Non-fatal: fig-start will use a default project dir
@@ -9740,5 +9742,11 @@ skillsCmd
     }
     console.log(chalk.red('Skill not found: ' + name));
   });
+
+await loadPlugins(program, {
+  daemonExec,
+  checkConnection,
+  getDaemonToken,
+});
 
 program.parse();

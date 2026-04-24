@@ -11,6 +11,11 @@ import {
   safeExecFileSync,
   safeHttpUrl,
 } from '../src/security.js';
+import {
+  getCredentialsRoot,
+  readRequiredCredential,
+  writeCredential,
+} from '../src/credentials.js';
 
 const cleanupPaths = [];
 
@@ -127,5 +132,46 @@ describe('config permissions and redaction', () => {
     assert.equal(redactSecret('abc'), 'abc...');
     assert.equal(redactSecret(''), '...');
     assert.equal(redactSecret(null), '...');
+  });
+});
+
+describe('fork credential policy (.figma-ds-cli)', () => {
+  it('stores credential files under ~/.figma-ds-cli with secure permissions', () => {
+    const home = mkdtempSync(join(tmpdir(), 'figma-credentials-home-'));
+    cleanupPaths.push(home);
+
+    const root = getCredentialsRoot({ homeDir: home });
+    const writtenPath = writeCredential({
+      pluginName: 'voice',
+      key: 'apiKey',
+      value: 'abc123',
+      homeDir: home,
+    });
+
+    assert.equal(root, join(home, '.figma-ds-cli', 'credentials'));
+    assert.equal(readFileSync(writtenPath, 'utf8'), 'abc123');
+    assert.ok(writtenPath.startsWith(root));
+    assertMode(root, 0o700);
+    assertMode(writtenPath, 0o600);
+  });
+
+  it('reads previously stored credentials from fork root', () => {
+    const home = mkdtempSync(join(tmpdir(), 'figma-credentials-read-'));
+    cleanupPaths.push(home);
+
+    writeCredential({ pluginName: 'voice', key: 'apiKey', value: 'secret-token', homeDir: home });
+    const value = readRequiredCredential({ pluginName: 'voice', key: 'apiKey', homeDir: home });
+
+    assert.equal(value, 'secret-token');
+  });
+
+  it('fails closed with actionable guidance when credential is missing', () => {
+    const home = mkdtempSync(join(tmpdir(), 'figma-credentials-missing-'));
+    cleanupPaths.push(home);
+
+    assert.throws(
+      () => readRequiredCredential({ pluginName: 'voice', key: 'apiKey', homeDir: home }),
+      /Missing credential "apiKey" for plugin "voice".*plugins setup voice/s
+    );
   });
 });

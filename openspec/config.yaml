@@ -1,0 +1,63 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Node.js CLI (ESM JavaScript), Commander, ws, Chalk, Ora.
+  Architecture: command-driven CLI over CDP/Figma plugin bridge with daemon/safe mode support.
+  Testing: Node built-in test runner via `node --test tests/*.test.js`.
+  Style: Project runtime conventions in AGENTS.md; no linter/formatter/typecheck tool configured.
+
+strict_tdd: true
+
+testing:
+  strict_tdd_mode: enabled
+  detected: 2026-04-24
+  test_runner:
+    available: true
+    framework: node:test
+    command: node --test tests/*.test.js
+  layers:
+    unit:
+      available: true
+      tool: node:test
+    integration:
+      available: false
+      tool: "—"
+    e2e:
+      available: true
+      tool: playwright (optionalDependency)
+  coverage:
+    available: false
+    command: "—"
+  quality_tools:
+    linter:
+      available: false
+      command: "—"
+    type_checker:
+      available: false
+      command: "—"
+    formatter:
+      available: false
+      command: "—"
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow existing code patterns and conventions
+    - Load relevant coding skills for the project stack
+  verify:
+    - Run tests if test infrastructure exists
+    - Compare implementation against every spec scenario
+  archive:
+    - Warn before merging destructive deltas (large removals)

@@ -18,7 +18,8 @@
     "OPENCODE.md",
     "src",
     "bin",
-    "plugin"
+    "plugin",
+    "plugins"
   ],
   "keywords": [
     "figma",

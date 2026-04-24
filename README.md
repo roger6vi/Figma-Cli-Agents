@@ -47,6 +47,19 @@ A CLI that connects directly to Figma Desktop and gives you complete control:
 This repository is an agent-friendly variant of the original workflow with launch support for Claude, Codex, Gemini, Crush, and OpenCode.
 The CLI commands stay the same: `fig-start`, `figma-cli`, and `figma-ds-cli`.
 
+## Runtime Contracts
+
+The runtime/execution contract for downstream consumers lives in [`docs/contracts/`](./docs/contracts/):
+
+- [`connection-contract.md`](./docs/contracts/connection-contract.md)
+- [`read-contract.md`](./docs/contracts/read-contract.md)
+- [`write-contract.md`](./docs/contracts/write-contract.md)
+- [`verify-contract.md`](./docs/contracts/verify-contract.md)
+- [`fork-deltas.md`](./docs/contracts/fork-deltas.md)
+- [`runtime-manifest.json`](./docs/contracts/runtime-manifest.json)
+
+Use these files for local runtime truth. Use official Figma docs and typings for platform truth.
+
 ## What This Fork Adds
 
 Compared with the original [`roger6vi/figma-cli`](https://github.com/roger6vi/figma-cli), this repository adds:

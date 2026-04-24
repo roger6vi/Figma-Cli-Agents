@@ -18,11 +18,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const entryPoint = resolve(repoRoot, 'src', 'index.js');
+const srcIndex = readFileSync(entryPoint, 'utf8');
 
 /**
  * Run `node src/index.js <...args>` with shell:false.
@@ -261,5 +263,23 @@ describe('command smoke: skills', () => {
     const { stdout } = runHelp('skills', '--help');
     assert.ok(stdout.includes('list'), 'skills --help must list "list"');
     assert.ok(stdout.includes('show'), 'skills --help must list "show"');
+  });
+});
+
+describe('safe mode launcher/project-isolation routing invariants', () => {
+  it('keeps FIGMA_ACTIVE_FILE marker emission in connect --safe flow', () => {
+    assert.match(
+      srcIndex,
+      /console\.log\(`FIGMA_ACTIVE_FILE=\$\{[^}]+\}`\)/,
+      'connect --safe must keep printing FIGMA_ACTIVE_FILE marker for fig-start project isolation'
+    );
+  });
+
+  it('sanitizes active file title before printing FIGMA_ACTIVE_FILE marker', () => {
+    assert.match(
+      srcIndex,
+      /safeActiveTitle\s*=\s*String\(activeTitle\)\.replace\(\/\[\\r\\n\]\+\/g,\s*' '\)\.trim\(\)/,
+      'connect --safe should sanitize active file title to preserve deterministic launcher parsing'
+    );
   });
 });
