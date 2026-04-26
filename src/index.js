@@ -2008,7 +2008,7 @@ const daemon = program
 daemon
   .command('status')
   .description('Check if daemon is running')
-  .option('--debug', 'Show detailed token and connection info')
+  .option('--debug', 'Show detailed runtime, token, and connection info')
   .action((options) => {
     const details = isDaemonRunning(true);
     const tokenStatus = getTokenStatus();

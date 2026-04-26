@@ -5,3 +5,5 @@ node_modules/
 .figma-client-*.mjs
 screenshot.png
 .atl/
+.figma-cli-agent-context.md
+nul
