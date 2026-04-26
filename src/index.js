@@ -25,7 +25,7 @@ import { listComponents, getComponent, getAllComponents, VISUAL_COMPONENTS } fro
 import { hexToRgb, FIGMA_HEX_TO_RGB_SOURCE, FIGMA_RGB_TO_HEX_SOURCE } from './color-utils.js';
 import { listBlocks, getBlock } from './blocks/index.js';
 import {
-  nullDevice, killPort, getPortPid, sleepAfterStop,
+  killPort, getPortPid, sleepAfterStop,
   startFigmaApp, killFigmaApp,
   getFigmaVersion, isFigmaRunning, platformName
 } from './platform.js';
@@ -100,37 +100,63 @@ function getTokenStatus() {
   return status;
 }
 
-// Check if daemon is running (returns object with details, or false)
-function isDaemonRunning(returnDetails = false) {
+function readDaemonHealthDetails() {
   try {
     const token = getDaemonToken();
     const tokenHeader = token ? ` -H "X-Daemon-Token: ${token}"` : '';
-    const response = execSync(`curl -s -o ${nullDevice} -w "%{http_code}"${tokenHeader} http://localhost:${DAEMON_PORT}/health`, {
+    const response = execSync(`curl -s -w "\n%{http_code}"${tokenHeader} http://localhost:${DAEMON_PORT}/health`, {
       encoding: 'utf8',
       stdio: 'pipe',
       timeout: 1000
     });
-    const statusCode = response.trim();
+    const trimmedResponse = response.trimEnd();
+    const lastNewline = trimmedResponse.lastIndexOf('\n');
+    const body = lastNewline >= 0 ? trimmedResponse.slice(0, lastNewline) : '';
+    const statusCode = lastNewline >= 0 ? trimmedResponse.slice(lastNewline + 1).trim() : trimmedResponse.trim();
 
-    if (returnDetails) {
-      return {
-        running: statusCode === '200',
-        statusCode,
-        hasToken: !!token,
-        authFailed: statusCode === '403'
-      };
+    let health = null;
+    if (body) {
+      try {
+        health = JSON.parse(body);
+      } catch {}
     }
-    return statusCode === '200';
+
+    return {
+      running: statusCode === '200',
+      statusCode,
+      hasToken: !!token,
+      authFailed: statusCode === '403',
+      health,
+      runtimeMode: health?.activeMode || health?.mode || 'unknown',
+      configuredRuntimeMode: health?.configuredMode || 'unknown'
+    };
   } catch (e) {
-    if (returnDetails) {
-      return {
-        running: false,
-        error: e.message,
-        hasToken: !!getDaemonToken()
-      };
-    }
-    return false;
+    return {
+      running: false,
+      error: e.message,
+      hasToken: !!getDaemonToken(),
+      runtimeMode: 'unknown',
+      configuredRuntimeMode: 'unknown'
+    };
   }
+}
+
+function formatRuntimeMode(mode) {
+  if (mode === 'yolo') return 'Yolo Mode / direct CDP';
+  if (mode === 'safe') return 'Safe Mode / plugin';
+  if (mode === 'auto') return 'Auto';
+  if (mode === 'disconnected') return 'Disconnected';
+  return mode || 'unknown';
+}
+
+// Check if daemon is running (returns object with details, or false)
+function isDaemonRunning(returnDetails = false) {
+  const details = readDaemonHealthDetails();
+
+  if (returnDetails) {
+    return details;
+  }
+  return details.running;
 }
 
 // Send command to daemon (uses native fetch in Node 18+)
@@ -191,6 +217,9 @@ async function daemonExec(action, data = {}, timeoutMs = 90000) {
 
     const result = await response.json();
     if (result.error) throw new Error(result.error);
+    if (response.status === 202 || result.accepted === true) {
+      return result;
+    }
     return result.result;
   } catch (e) {
     if (e.name === 'TimeoutError' || e.message.includes('timeout')) {
@@ -201,11 +230,11 @@ async function daemonExec(action, data = {}, timeoutMs = 90000) {
 }
 
 // Fast eval via daemon (falls back to direct connection)
-async function fastEval(code) {
+async function fastEval(code, metadata = {}) {
   // Try daemon first
   if (isDaemonRunning()) {
     try {
-      return await daemonExec('eval', { code });
+      return await daemonExec('eval', { code, ...metadata });
     } catch (e) {
       // Continue to fallback
     }
@@ -217,11 +246,11 @@ async function fastEval(code) {
 }
 
 // Fast render via daemon (falls back to direct connection)
-async function fastRender(jsx) {
+async function fastRender(jsx, metadata = {}) {
   // Try daemon first
   if (isDaemonRunning()) {
     try {
-      return await daemonExec('render', { jsx });
+      return await daemonExec('render', { jsx, ...metadata });
     } catch (e) {
       // Continue to fallback
     }
@@ -248,7 +277,7 @@ function runFigmaUse(cmd, options = {}) {
 }
 
 // Start daemon in background
-function startDaemon(forceRestart = false, mode = 'auto') {
+function startDaemon(forceRestart = false, mode = 'cdp') {
   // If force restart, always kill existing daemon first
   if (forceRestart) {
     stopDaemon();
@@ -1305,13 +1334,13 @@ program
       return;
     }
 
-    // Start daemon for fast commands (force restart to get fresh connection)
+    // Start daemon for fast commands (force restart to get fresh Yolo/direct CDP runtime)
     const daemonSpinner = ora('Starting speed daemon...').start();
     try {
-      startDaemon(true, 'auto');  // Auto mode: uses plugin if connected, otherwise CDP
+      startDaemon(true, 'cdp');
       await new Promise(r => setTimeout(r, 1500));
       if (isDaemonRunning()) {
-        daemonSpinner.succeed('Speed daemon running (commands are now 10x faster)');
+        daemonSpinner.succeed('Speed daemon running in Yolo Mode/direct CDP (commands are now 10x faster)');
       } else {
         daemonSpinner.warn('Daemon failed to start, commands will be slower');
       }
@@ -1991,12 +2020,25 @@ daemon
       // Connection status
       if (details.running) {
         console.log(chalk.green('✓ Daemon:    ') + 'Running on port ' + DAEMON_PORT);
+        console.log(chalk.gray('  Runtime:   ') + formatRuntimeMode(details.runtimeMode));
       } else if (details.authFailed) {
         console.log(chalk.red('✗ Daemon:    ') + 'Running but authentication failed (403)');
       } else if (details.error) {
         console.log(chalk.yellow('○ Daemon:    ') + 'Not responding');
       } else {
         console.log(chalk.yellow('○ Daemon:    ') + 'Not running');
+      }
+
+      if (details.health) {
+        console.log();
+        console.log(chalk.bold('Runtime Info'));
+        console.log(chalk.gray('  Configured:        ') + formatRuntimeMode(details.configuredRuntimeMode));
+        console.log(chalk.gray('  Active:            ') + formatRuntimeMode(details.runtimeMode));
+        console.log(chalk.gray('  Execution default: ') + (details.health.executionDefault || 'unknown'));
+        console.log(chalk.gray('  Boundary:          ') + (details.health.runtimeBoundary || 'unknown'));
+        console.log(chalk.gray('  Fallback:          ') + (details.health.fallbackMode || 'none'));
+        console.log(chalk.gray('  Plugin connected:  ') + (details.health.plugin ? chalk.green('Yes') : chalk.red('No')));
+        console.log(chalk.gray('  CDP healthy:       ') + (details.health.cdp ? chalk.green('Yes') : chalk.yellow('No')));
       }
 
       // Token status
@@ -2029,7 +2071,7 @@ daemon
     } else {
       // Simple output
       if (details.running) {
-        console.log(chalk.green('✓ Daemon is running on port ' + DAEMON_PORT));
+        console.log(chalk.green('✓ Daemon is running on port ' + DAEMON_PORT) + chalk.gray(' — runtime: ') + formatRuntimeMode(details.runtimeMode));
       } else if (details.authFailed) {
         console.log(chalk.red('✗ Daemon running but auth failed (token mismatch)'));
         console.log(chalk.gray('  Fix: node src/index.js daemon restart'));
@@ -2058,13 +2100,13 @@ daemon
       options.force = true;
     }
 
-    console.log(chalk.blue('Starting daemon...'));
-    startDaemon(options.force, 'auto');
+    console.log(chalk.blue('Starting daemon in Yolo Mode/direct CDP...'));
+    startDaemon(options.force, 'cdp');
     await new Promise(r => setTimeout(r, 1500));
 
     const newDetails = isDaemonRunning(true);
     if (newDetails.running) {
-      console.log(chalk.green('✓ Daemon started on port ' + DAEMON_PORT));
+      console.log(chalk.green('✓ Daemon started on port ' + DAEMON_PORT) + chalk.gray(' — runtime: ') + formatRuntimeMode(newDetails.runtimeMode));
     } else if (newDetails.authFailed) {
       console.log(chalk.red('✗ Daemon started but auth failed'));
       console.log(chalk.gray('  Run: node src/index.js daemon diagnose'));
@@ -2089,12 +2131,12 @@ daemon
   .action(async () => {
     console.log(chalk.blue('Restarting daemon...'));
     // Use forceRestart=true to ensure clean restart with new token
-    startDaemon(true, 'auto');
+    startDaemon(true, 'cdp');
     await new Promise(r => setTimeout(r, 1500));
 
     const details = isDaemonRunning(true);
     if (details.running) {
-      console.log(chalk.green('✓ Daemon restarted with fresh token'));
+      console.log(chalk.green('✓ Daemon restarted with fresh token') + chalk.gray(' — runtime: ') + formatRuntimeMode(details.runtimeMode));
     } else if (details.authFailed) {
       console.log(chalk.red('✗ Daemon running but auth failed'));
       console.log(chalk.gray('  Try: node src/index.js daemon diagnose'));

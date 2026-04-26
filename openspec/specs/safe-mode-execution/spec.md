@@ -26,7 +26,7 @@ The system MUST execute Safe Mode eval requests through a hardened path that SHA
 
 ### Requirement: Fork Runtime Contract Preservation
 
-The system MUST preserve existing fork behavior for multi-agent launcher flow, project isolation semantics, and daemon/runtime command contracts while applying the Safe Mode fix.
+The system MUST preserve existing fork behavior for multi-agent launcher flow, project isolation semantics, and daemon/runtime command contracts while applying Safe Mode queue-contract changes, including forwarding `intent`, `queue`, and `target.page`, with default blocking compatibility.
 
 #### Scenario: Existing launcher and project context remain intact
 

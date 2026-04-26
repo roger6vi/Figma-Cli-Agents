@@ -142,3 +142,13 @@ describe('Safe Mode plugin eval hardening', () => {
     );
   });
 });
+
+describe('Safe Mode queue metadata contract forwarding', () => {
+  it('daemonExec payload keeps metadata spread for intent/queue/target.page compatibility', () => {
+    assert.match(
+      srcIndex,
+      /JSON\.stringify\(\{ action, \.\.\.data, timeout: timeoutMs \}\)/,
+      'daemonExec payload must keep spread metadata forwarding for Safe Mode queue-contract preservation'
+    );
+  });
+});

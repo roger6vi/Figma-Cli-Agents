@@ -205,6 +205,8 @@ This will:
 | `fig-start --safe` | Safe Mode (plugin-based, no patching) |
 | `fig-start --setup` | Change the figma-cli repo path |
 
+The runtime declares its mode through `figma-ds-cli daemon status --debug` and `/health`: configured mode, active mode, execution default, runtime boundary, fallback, plugin status, and CDP health. Default write execution is Yolo Mode/direct CDP; Safe Mode/plugin is fallback-only unless started explicitly with `--safe`.
+
 ### Safe Mode (no patching)
 
 If you can't grant Full Disk Access or prefer not to patch Figma:
@@ -452,6 +454,14 @@ The CLI runs a local daemon for faster command execution. Security features:
 
 The daemon session token is stored at `~/.figma-ds-cli/.daemon-token` with owner-only permissions (0600).
 The daemon and CLI both resolve that path from the user's home directory.
+
+### Write Queue Compatibility (MVP)
+
+- Default behavior stays blocking/synchronous (`queue=inline`) so existing CLI flows and `daemonExec()` callers keep the same result shape.
+- Async queueing is opt-in (`queue=enqueue`) and returns acceptance metadata (`accepted`, `operationId`, `status`) for agent-style workflows.
+- Queue metadata supported on `/exec`: `intent`, `queue`, `wait`, `target.page`, `operationId`, `idempotencyKey`, `verify`.
+- `queue=bypass` is daemon-internal only and guarded by `FIGMA_WRITE_QUEUE_ALLOW_BYPASS=1`.
+- No build step is required for this migration; validate with `node --test tests/*.test.js`.
 
 ---
 

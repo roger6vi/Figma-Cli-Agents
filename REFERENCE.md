@@ -267,15 +267,17 @@ Shape types: `ROUNDED_RECTANGLE`, `RECTANGLE`, `ELLIPSE`, `DIAMOND`, `TRIANGLE_U
 node src/index.js connect                  # Connect (Yolo Mode)
 node src/index.js connect --safe           # Connect (Safe Mode, plugin)
 node src/index.js daemon status            # Check daemon status
-node src/index.js daemon status --debug    # Detailed token & connection info
+node src/index.js daemon status --debug    # Detailed runtime mode, token & connection info
 node src/index.js daemon diagnose          # Full diagnostic (troubleshooting)
-node src/index.js daemon start             # Start daemon manually
+node src/index.js daemon start             # Start daemon manually in Yolo/direct CDP mode
 node src/index.js daemon start --force     # Force restart
-node src/index.js daemon restart           # Restart with fresh token
+node src/index.js daemon restart           # Restart with fresh token in Yolo/direct CDP mode
 node src/index.js daemon stop              # Stop daemon
 node src/index.js daemon reconnect         # Reconnect to Figma
 node src/index.js files                    # List open Figma files (JSON)
 ```
+
+Runtime declaration is explicit: `/health` and `daemon status --debug` report configured mode, active mode, execution default, runtime boundary, fallback, plugin connection, and CDP health. Default manual/start/connect paths use Yolo Mode/direct CDP; Safe Mode/plugin is only active through `connect --safe`.
 
 ### Troubleshooting Auth Errors
 
@@ -287,6 +289,22 @@ node src/index.js daemon restart           # Usually fixes it
 ```
 
 Token file location: `~/.figma-ds-cli/.daemon-token`
+
+### Write Queue Metadata (MVP)
+
+`/exec` accepts queue metadata without breaking existing defaults:
+
+- `intent`: `read` | `write` (for `eval`, default is `write` unless explicit `read`)
+- `queue`: `inline` (default) | `enqueue` | `bypass` (daemon-internal only)
+- `wait`: boolean (`inline` defaults to waiting, `enqueue` defaults to non-blocking)
+- `target.page`: `{ id?: string, name?: string }` (id first, exact-name fallback, ambiguous fails closed)
+- `operationId`, `idempotencyKey`, `verify` (`structural` | `visual` | `none`)
+
+Compatibility notes:
+
+- Default `queue=inline` keeps current blocking response shape (`{ result, mode }`).
+- `queue=enqueue` returns HTTP 202-style acceptance envelope (`{ accepted, operationId, status, mode }`).
+- `queue=bypass` requires `FIGMA_WRITE_QUEUE_ALLOW_BYPASS=1` and should be used only for daemon-internal/debug paths.
 
 ## Component Combinations (combos)
 

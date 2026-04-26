@@ -308,9 +308,9 @@ export class FigmaClient {
   /**
    * Render JSX-like syntax to Figma
    */
-  async render(jsx) {
+  async render(jsx, options = {}) {
     // Parse JSX and generate Figma code (async for icon fetching)
-    const code = await this.parseJSX(jsx);
+    const code = await this.parseJSX(jsx, options);
     return await this.eval(code);
   }
 
@@ -637,7 +637,7 @@ export class FigmaClient {
       `;
     }).join('\n');
 
-    return `
+    const generated = `
       (async function() {
         ${fontLoads}
         ${varLoadCode}
@@ -659,12 +659,18 @@ export class FigmaClient {
         return results;
       })()
     `;
+
+    if (options.targetPrelude) {
+      return `${options.targetPrelude}\n${generated}`;
+    }
+
+    return generated;
   }
 
   /**
    * Parse JSX-like syntax to Figma Plugin API code
    */
-  async parseJSX(jsx) {
+  async parseJSX(jsx, options = {}) {
     // Find opening Frame tag (attributes are optional)
     const openMatch = jsx.match(/<Frame(?:\s+([^>]*?))?>/);
     if (!openMatch) {
@@ -695,7 +701,11 @@ export class FigmaClient {
     const iconSvgMap = await this.prefetchIconSvgs(childElements);
 
     // Generate code
-    return this.generateCode(props, childElements, iconSvgMap);
+    const generated = this.generateCode(props, childElements, iconSvgMap);
+    if (options.targetPrelude) {
+      return `${options.targetPrelude}\n${generated}`;
+    }
+    return generated;
   }
 
   /**

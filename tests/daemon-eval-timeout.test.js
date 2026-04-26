@@ -20,11 +20,12 @@ const daemonSrc = readFileSync(resolve(repoRoot, 'src/daemon.js'), 'utf8');
 
 describe('daemon eval timeout from request body', () => {
   it('reads timeout from request body (not hardcoded)', () => {
-    // After the fix, the eval case must read timeout from the parsed body
-    // The body parsing line should include "timeout" as a destructured key
-    const bodyParseMatch = daemonSrc.match(/const\s*\{[^}]+\}\s*=\s*JSON\.parse\(body\)/);
-    assert.ok(bodyParseMatch, 'body must be JSON.parse(body)');
-    assert.match(bodyParseMatch[0], /timeout/, 'timeout must be destructured from request body');
+    // After queue-router refactor, payload parsing + timeout clamp can be split.
+    // We still require timeout to come from parsed request payload (not hardcoded constants only).
+    assert.match(daemonSrc, /const\s+payload\s*=\s*JSON\.parse\(body\)/,
+      'daemon must parse request body into payload');
+    assert.match(daemonSrc, /clampEvalTimeout\(request\.timeout\)|clampEvalTimeout\(payload\.timeout\)/,
+      'daemon must clamp timeout from request payload');
   });
 
   it('default timeout is 30000ms when not specified', () => {
@@ -40,12 +41,8 @@ describe('daemon eval timeout from request body', () => {
   });
 
   it('eval case uses the request-body timeout', () => {
-    // The eval case line must pass the request-body timeout to execWithTimeout
-    // Pattern: execWithTimeout(() => executeEval(code), <variable not hardcoded>)
-    const evalCaseMatch = daemonSrc.match(/case 'eval':\s*\n\s*result = await execWithTimeout\([^,]+,\s*(\w+)\)/);
-    assert.ok(evalCaseMatch, "eval case must call execWithTimeout with a variable timeout (not hardcoded)");
-    // The variable must NOT be a literal number
-    const timeoutArg = evalCaseMatch[1];
-    assert.doesNotMatch(timeoutArg, /^\d+$/, 'eval timeout arg must be a variable, not a literal number');
+    // Refactored through executeDaemonAction -> still must apply variable timeout to eval path
+    assert.match(daemonSrc, /case 'eval':[\s\S]*execWithTimeout\(\(\) => executeEval\(evalCode\),\s*evalTimeout\)/,
+      'eval path must use variable evalTimeout, not hardcoded literal');
   });
 });

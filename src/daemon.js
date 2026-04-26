@@ -20,6 +20,10 @@ import { readFileSync, statSync, writeFileSync, unlinkSync, readdirSync, mkdirSy
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { QueueStore, createInMemoryQueueStore } from './queue-store.js';
+import { createWriteGateway } from './write-gateway.js';
+import { routeDaemonExec } from './daemon-exec-router.js';
+import { buildTargetPrelude } from './target-resolver.js';
 
 // Hot-reload FigmaClient: copy to temp file and import (Node.js ES modules don't support cache busting)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -340,6 +344,122 @@ function getMode() {
   return 'disconnected';
 }
 
+function getConfiguredRuntimeMode() {
+  if (MODE === 'plugin') return 'safe';
+  if (MODE === 'cdp') return 'yolo';
+  return 'auto';
+}
+
+function getExecutionDefault() {
+  if (MODE === 'plugin') return 'safe/plugin';
+  if (MODE === 'auto') return 'auto/plugin-if-connected-else-yolo';
+  return 'yolo/direct-cdp';
+}
+
+function getRuntimeBoundary(mode) {
+  if (mode === 'safe') return 'plugin-safe-mode';
+  if (mode === 'yolo') return 'yolo-direct-cdp';
+  return 'not-connected';
+}
+
+const EVAL_TIMEOUT_MIN = 5000;
+const EVAL_TIMEOUT_MAX = 300000;
+const EVAL_TIMEOUT_DEFAULT = 30000;
+const STRUCTURAL_SNAPSHOT_CODE = `(() => {
+  const page = figma.currentPage;
+  return {
+    pageId: page.id,
+    pageName: page.name,
+    childCount: page.children.length,
+    nodeIds: page.children.map((node) => node.id)
+  };
+})()`;
+
+let writeGatewayPromise = null;
+
+function clampEvalTimeout(reqTimeout) {
+  return reqTimeout != null
+    ? Math.min(Math.max(Number(reqTimeout), EVAL_TIMEOUT_MIN), EVAL_TIMEOUT_MAX)
+    : EVAL_TIMEOUT_DEFAULT;
+}
+
+async function execWithTimeout(fn, timeoutMs = EVAL_TIMEOUT_DEFAULT) {
+  return Promise.race([
+    fn(),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Execution timeout (${timeoutMs / 1000}s)`)), timeoutMs)
+    )
+  ]);
+}
+
+function withTargetPrelude(code, target) {
+  if (!target?.page?.id && !target?.page?.name) return code;
+  const prelude = buildTargetPrelude(target.page);
+  return `${prelude}\n${code}`;
+}
+
+async function executeDaemonAction(request, evalTimeout) {
+  const { action, code, jsx, jsxArray, gap, vertical, target } = request;
+
+  switch (action) {
+    case 'eval': {
+      const evalCode = withTargetPrelude(code, target);
+      return execWithTimeout(() => executeEval(evalCode), evalTimeout);
+    }
+    case 'render': {
+      const ClientClass = await getFigmaClient();
+      const parser = new ClientClass();
+      const renderCode = await parser.parseJSX(jsx);
+      const codeWithTarget = withTargetPrelude(renderCode, target);
+      return execWithTimeout(() => executeEval(codeWithTarget), 90000);
+    }
+    case 'render-batch': {
+      const ClientClass = await getFigmaClient();
+      const batchParser = new ClientClass();
+      const batchCode = batchParser.parseJSXBatch(jsxArray, {
+        gap: gap || 40,
+        vertical: vertical || false
+      });
+      const codeWithTarget = withTargetPrelude(batchCode, target);
+      return execWithTimeout(() => executeEval(codeWithTarget), 60000);
+    }
+    default:
+      throw new Error(`Unknown action: ${action}`);
+  }
+}
+
+async function takeStructuralSnapshot() {
+  return executeEval(STRUCTURAL_SNAPSHOT_CODE);
+}
+
+async function getWriteGateway() {
+  if (!writeGatewayPromise) {
+    writeGatewayPromise = (async () => {
+      let queueStore = new QueueStore();
+      try {
+        await queueStore.init();
+      } catch (error) {
+        console.warn(`[daemon] QueueStore sqlite init failed, falling back to in-memory queue: ${error.message}`);
+        queueStore = new QueueStore({ adapter: createInMemoryQueueStore() });
+        await queueStore.init();
+      }
+
+      return createWriteGateway({
+        queueStore,
+        env: process.env,
+        executeReadAction: async (request) => executeDaemonAction(request, EVAL_TIMEOUT_DEFAULT),
+        executeWriteAction: async (request) => {
+          const timeout = clampEvalTimeout(request.timeout);
+          return executeDaemonAction(request, timeout);
+        },
+        takeSnapshot: async () => takeStructuralSnapshot()
+      });
+    })();
+  }
+
+  return writeGatewayPromise;
+}
+
 // ============ HTTP SERVER ============
 
 async function handleRequest(req, res) {
@@ -368,11 +488,17 @@ async function handleRequest(req, res) {
     const mode = getMode();
     const pluginConnected = isPluginConnected();
     const cdpHealthy = await isCdpHealthy();
+    const configuredMode = getConfiguredRuntimeMode();
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: (pluginConnected || cdpHealthy) ? 'ok' : 'disconnected',
       mode: mode,
+      activeMode: mode,
+      configuredMode,
+      executionDefault: getExecutionDefault(),
+      runtimeBoundary: getRuntimeBoundary(mode),
+      fallbackMode: configuredMode === 'safe' ? null : 'safe/plugin',
       plugin: pluginConnected,
       cdp: cdpHealthy,
       idleTimeoutMs: IDLE_TIMEOUT_MS
@@ -407,55 +533,21 @@ async function handleRequest(req, res) {
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const { action, code, jsx, jsxArray, gap, vertical, timeout: reqTimeout } = JSON.parse(body);
-          let result;
+          const payload = JSON.parse(body);
+          const writeGateway = await getWriteGateway();
 
-          // Clamp caller-provided timeout: min 5s, max 300s; default 30s
-          const EVAL_TIMEOUT_MIN = 5000;
-          const EVAL_TIMEOUT_MAX = 300000;
-          const EVAL_TIMEOUT_DEFAULT = 30000;
-          const evalTimeout = reqTimeout != null
-            ? Math.min(Math.max(Number(reqTimeout), EVAL_TIMEOUT_MIN), EVAL_TIMEOUT_MAX)
-            : EVAL_TIMEOUT_DEFAULT;
+          const routed = await routeDaemonExec({
+            request: payload,
+            writeGateway,
+            executeDirectAction: async (request) => {
+              const timeout = clampEvalTimeout(request.timeout);
+              return executeDaemonAction(request, timeout);
+            },
+            getMode
+          });
 
-          const execWithTimeout = async (fn, timeoutMs = 30000) => {
-            return Promise.race([
-              fn(),
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error(`Execution timeout (${timeoutMs/1000}s)`)), timeoutMs)
-              )
-            ]);
-          };
-
-          switch (action) {
-            case 'eval':
-              result = await execWithTimeout(() => executeEval(code), evalTimeout);
-              break;
-            case 'render': {
-              // Parse JSX to code, then execute via unified eval (works with both CDP and Plugin)
-              const ClientClass = await getFigmaClient();
-              const parser = new ClientClass();
-              const renderCode = await parser.parseJSX(jsx);
-              result = await execWithTimeout(() => executeEval(renderCode), 90000); // 90s for renders with icons
-              break;
-            }
-            case 'render-batch': {
-              // Single eval for ALL frames (10x faster than loop)
-              const ClientClass = await getFigmaClient();
-              const batchParser = new ClientClass();
-              const batchCode = batchParser.parseJSXBatch(jsxArray, {
-                gap: gap || 40,
-                vertical: vertical || false
-              });
-              result = await execWithTimeout(() => executeEval(batchCode), 60000); // 60s for batches
-              break;
-            }
-            default:
-              throw new Error(`Unknown action: ${action}`);
-          }
-
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ result, mode: getMode() }));
+          res.writeHead(routed.statusCode, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(routed.body));
           return;
         } catch (error) {
           lastError = error;
