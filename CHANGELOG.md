@@ -2,6 +2,34 @@
 
 All notable changes to Figma-Cli-Agents are documented here.
 
+## [v2.2.0] — 2026-04-26
+
+### Resumen
+Esta release prepara Figma-Cli-Agents para sesiones multiagente más seguras y rápidas, serializando las escrituras contra Figma sin perder compatibilidad con el flujo CLI actual.
+
+### Novedades
+- Agrega una cola de escritura SQLite en el boundary del daemon antes de mutar Figma.
+- Agrega soporte de metadata para `/exec`: `intent`, `queue`, `wait`, `target.page`, `operationId`, `idempotencyKey` y `verify`.
+- Agrega modo async `queue=enqueue` para workflows multiagente, manteniendo `queue=inline` como default bloqueante.
+- Agrega resolución explícita de página destino con fallo cerrado ante ambigüedad.
+- Agrega eventos persistidos para trazabilidad de writes: `target_resolved`, `executed`, `verified` y `success`.
+
+### Cambios
+- El daemon expone mejor información de modo/runtime en `/health` y `daemon status --debug`.
+- Los comandos existentes preservan compatibilidad bloqueante por defecto.
+- Se documenta la metadata de write queue en README y REFERENCE.
+- Se sincroniza la especificación OpenSpec de `write-queue-execution` y Safe Mode.
+
+### Correcciones
+- Evita depender de cadenas `page switch && render` para writes dirigidos, que podían colgar o escribir en la página equivocada.
+- Las rutas de fallo de verificación ya no emiten eventos `verified` engañosos.
+
+### Internas
+- Agrega cobertura con `node:test` para queue store, classifier, target resolver, daemon routing, enqueue contract, verification y event history.
+- Agrega `sqlite3` como dependencia runtime.
+- Agrega script canónico de release para futuras publicaciones firmadas.
+
+
 ## [2.2.0] - 2026-04-10
 
 ### Added
